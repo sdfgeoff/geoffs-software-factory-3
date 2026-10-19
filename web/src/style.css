@@ -3158,3 +3158,123 @@ code {
   min-width: 0;
   overflow-wrap: anywhere;
 }
+
+.global-search-trigger {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #fff;
+  color: #63715f;
+  padding: 8px 11px;
+  font-size: 11px;
+}
+.global-search-trigger kbd {
+  margin-left: 18px;
+  color: #929b90;
+  font-size: 10px;
+}
+.global-search-content {
+  padding: 0 28px 22px;
+  min-width: 0;
+}
+.global-search-input {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  color: #63715f;
+}
+.global-search-input:focus-within {
+  outline: 2px solid #9db194;
+}
+.global-search-input input {
+  height: 24px;
+  padding: 0;
+  font-weight: 400;
+  border: 0;
+  outline: 0;
+  min-width: 0;
+  width: 100%;
+  background: transparent;
+  font: inherit;
+}
+.global-search-summary,
+.global-search-footnote {
+  font-size: 12px;
+  color: #6f7a6b;
+  line-height: 1.5;
+}
+.global-search-results {
+  max-height: 52vh;
+  overflow-y: auto;
+}
+.global-search-result {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  text-align: left;
+  width: 100%;
+  padding: 14px 10px;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  color: inherit;
+  overflow-wrap: anywhere;
+}
+.global-search-result:hover,
+.global-search-result:focus-visible {
+  background: #f1f5ee;
+  outline: 2px solid #9db194;
+  outline-offset: -2px;
+}
+.global-search-result-meta {
+  font-size: 10px;
+  color: #71836a;
+}
+.global-search-result strong {
+  font-size: 14px;
+  font-weight: 550;
+}
+.global-search-snippet {
+  font-size: 12px;
+  color: #63715f;
+  line-height: 1.5;
+}
+.global-search-more {
+  margin: 16px 0;
+}
+.search-target {
+  outline: 2px solid #8ba27c;
+  outline-offset: -2px;
+  background-color: #f1f5ee;
+}
+@media (max-width: 1200px) {
+  .global-search-trigger span,
+  .global-search-trigger kbd {
+    display: none;
+  }
+}
+@media (max-width: 760px) {
+  .global-search-content {
+    padding: 0 18px 16px;
+  }
+  .global-search-trigger {
+    padding: 7px;
+  }
+}
+
+.global-search-summary {
+  margin: 12px 0;
+}
+.global-search-footnote {
+  margin-top: 14px;
+}
+
+.search-backdrop {
+  z-index: 80;
+}

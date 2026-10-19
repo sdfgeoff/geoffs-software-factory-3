@@ -66,6 +66,17 @@ tool(
   },
 );
 tool(
+  "search_platform",
+  "Search all channels (including archived), threads, replies, people/agent roles, published attachment filenames, and your private reminders. Literal text search; file contents are excluded. Runtime logs require admin access. Paginate with offset and limit.",
+  {
+    query: z.string().max(200),
+    limit: z.number().int().min(1).max(100).optional(),
+    offset: z.number().int().min(0).max(1000000).optional(),
+  },
+  ({ query, ...options }) =>
+    api("/search?" + new URLSearchParams({ q: query, ...options })),
+);
+tool(
   "read_thread",
   "Read a work item, all replies, attachment metadata, and recent activity.",
   { thread_id: id },

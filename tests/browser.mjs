@@ -483,3 +483,297 @@ test(
     }
   },
 );
+
+test(
+  "browser: global search spans channels, replies, files, people, private reminders and admin logs",
+  { timeout: 60000 },
+  async () => {
+    const dir = mkdtempSync(join(tmpdir(), "threadwork-search-browser-"));
+    const app = createApp({
+      dataDir: dir,
+      env: {
+        ADMIN_PASSWORD: "browser-search-password",
+        AGENT_SPARK_TOKEN: "browser-search-token",
+      },
+    });
+    const server = app.listen(0, "127.0.0.1");
+    await new Promise((r) => server.once("listening", r));
+    const url = `http://127.0.0.1:${server.address().port}`;
+    const browser = await chromium.launch({
+      headless: true,
+      executablePath:
+        process.env.CHROMIUM_PATH ||
+        (existsSync("/usr/bin/chromium") ? "/usr/bin/chromium" : undefined),
+      args: ["--no-sandbox"],
+    });
+    const context = await browser.newContext({
+      viewport: { width: 1440, height: 1000 },
+    });
+    const page = await context.newPage();
+    const errors = [];
+    page.on("pageerror", (e) => errors.push(e.message));
+    page.setDefaultTimeout(8000);
+    try {
+      await page.goto(url);
+      await page.getByLabel("Username", { exact: true }).fill("admin");
+      await page
+        .getByLabel("Password", { exact: true })
+        .fill("browser-search-password");
+      await page.getByRole("button", { name: "Sign in", exact: true }).click();
+      await expect(
+        page.getByRole("heading", { name: /All work/ }),
+      ).toBeVisible();
+      const create = async (path, body) => {
+        const response = await context.request.post(url + "/api" + path, {
+          data: body,
+        });
+        expect(response.ok()).toBeTruthy();
+        return response.json();
+      };
+      const channel = await create("/channels", {
+        name: "search-garden",
+        description: "Cross-channel garden discussions",
+      });
+      const thread = await create("/threads", {
+        channel_id: channel.id,
+        title: "Planning spring planting",
+        body: "A garden thread outside the current channel",
+      });
+      for (let i = 0; i < 12; i++)
+        await create(`/threads/${thread.id}/replies`, {
+          body: `Earlier discussion ${i}`,
+        });
+      const reply = await create(`/threads/${thread.id}/replies`, {
+        body: "A hidden crocus reply worth finding",
+      });
+      const file = await context.request.post(url + "/api/attachments", {
+        multipart: {
+          file: {
+            name: "tulip-sketch.txt",
+            mimeType: "text/plain",
+            buffer: Buffer.from("A sketch"),
+          },
+        },
+      });
+      const attachment = await file.json();
+      await create(`/threads/${thread.id}/replies`, {
+        body: "",
+        attachment_ids: [attachment.id],
+      });
+      await create("/notification-schedules", {
+        message: "Private watering reminder",
+        when: "in one hour",
+      });
+      await create("/admin/users", {
+        username: "alex",
+        name: "Alex Gardener",
+        password: "browser-search-person",
+      });
+      const agent = app.locals.db.prepare("SELECT user_id FROM agents").get();
+      app.locals.db
+        .prepare(
+          "INSERT INTO agent_logs(agent_id,level,message,created_at) VALUES(?,'info','Greenhouse runtime trace',?)",
+        )
+        .run(agent.user_id, new Date().toISOString());
+      async function find(query) {
+        await page
+          .getByRole("button", { name: "Search everywhere", exact: true })
+          .click();
+        await page.getByLabel("Search everything", { exact: true }).fill(query);
+      }
+      await page
+        .getByRole("button", { name: "Open inbox", exact: true })
+        .click();
+      await page.keyboard.press("Control+k");
+      await expect(
+        page.getByLabel("Search everything", { exact: true }),
+      ).toBeFocused();
+      await page
+        .getByLabel("Search everything", { exact: true })
+        .fill("crocus");
+      await expect(page.locator(".global-search-result")).toHaveCount(1);
+      await page
+        .getByLabel("Search everything", { exact: true })
+        .press("ArrowDown");
+      await expect(page.locator(".global-search-result")).toBeFocused();
+      await page.keyboard.press("Control+k");
+      await expect(
+        page.getByLabel("Search everything", { exact: true }),
+      ).toBeFocused();
+      await page
+        .getByLabel("Search everything", { exact: true })
+        .press("ArrowDown");
+      await page.keyboard.press("Enter");
+      await expect(
+        page.getByRole("heading", {
+          name: "Planning spring planting",
+          exact: true,
+        }),
+      ).toBeVisible();
+      await expect(page.locator(`#reply-${reply.id}`)).toHaveClass(
+        /search-target/,
+      );
+      await expect(page.locator(`#reply-${reply.id}`)).toBeInViewport();
+      await page.getByRole("button", { name: "Activity", exact: true }).click();
+      await page.keyboard.press("Control+k");
+      await expect(
+        page.getByLabel("Search everything", { exact: true }),
+      ).toBeFocused();
+      await page.keyboard.press("Escape");
+      await expect(
+        page.getByRole("dialog", { name: "Thread details", exact: true }),
+      ).toBeVisible();
+      await expect(
+        page.getByRole("button", { name: "Activity", exact: true }),
+      ).toHaveClass(/selected/);
+      await page.keyboard.press("Control+k");
+      await page
+        .getByLabel("Search everything", { exact: true })
+        .fill("crocus");
+      await page.locator(".global-search-result").click();
+      await expect(
+        page.getByRole("button", { name: /^Discussion/ }),
+      ).toHaveClass(/selected/);
+      await expect(page.locator(`#reply-${reply.id}`)).toBeInViewport();
+      await page
+        .getByRole("button", { name: "Close thread", exact: true })
+        .click();
+      await find("tulip-sketch");
+      await expect(page.locator(".global-search-result")).toContainText(
+        "Attachment",
+      );
+      await page.locator(".global-search-result").click();
+      await expect(
+        page.getByRole("heading", {
+          name: "Planning spring planting",
+          exact: true,
+        }),
+      ).toBeVisible();
+      await page
+        .getByRole("button", { name: "Close thread", exact: true })
+        .click();
+      await find("Alex Gardener");
+      await page.locator(".global-search-result").click();
+      await expect(page.locator(".person-row.search-target")).toContainText(
+        "Alex Gardener",
+      );
+      await find("Private watering");
+      await expect(page.locator(".global-search-result")).toContainText(
+        "Private reminder · active",
+      );
+      await page.locator(".global-search-result").click();
+      await expect(page.locator(".reminder-row.search-target")).toContainText(
+        "Private watering reminder",
+      );
+      await find("Greenhouse runtime");
+      await expect(page.locator(".global-search-result")).toContainText(
+        "Runtime log",
+      );
+      await page.locator(".global-search-result").click();
+      await expect(
+        page
+          .locator(".runtime-logs > div")
+          .filter({ hasText: "Greenhouse runtime trace" }),
+      ).toBeVisible();
+      await page
+        .getByRole("button", { name: "Configuration", exact: true })
+        .click();
+      await page.keyboard.press("Control+k");
+      await expect(
+        page.getByRole("dialog", { name: "Search everywhere", exact: true }),
+      ).toBeVisible();
+      await expect(
+        page.getByLabel("Search everything", { exact: true }),
+      ).toBeFocused();
+      await page.keyboard.press("Escape");
+      await expect(
+        page.getByRole("button", { name: "Configuration", exact: true }),
+      ).toHaveClass(/selected/);
+      await page.keyboard.press("Control+k");
+      await page
+        .getByLabel("Search everything", { exact: true })
+        .fill("Greenhouse runtime");
+      await page.locator(".global-search-result").click();
+      await expect(
+        page.getByRole("button", { name: "Runtime log", exact: true }),
+      ).toHaveClass(/selected/);
+      await expect(
+        page
+          .locator(".runtime-logs > div")
+          .filter({ hasText: "Greenhouse runtime trace" }),
+      ).toBeVisible();
+      await page.keyboard.press("Control+k");
+      await page
+        .getByLabel("Search everything", { exact: true })
+        .fill("crocus");
+      await page.locator(".global-search-result").click();
+      await expect(page.locator(".agent-detail-tabs")).toHaveCount(0);
+      await expect(page.locator(`#reply-${reply.id}`)).toBeInViewport();
+      await page
+        .getByRole("button", { name: "Close thread", exact: true })
+        .click();
+      await find("search-garden");
+      await page.locator(".global-search-result").click();
+      await expect(
+        page.getByRole("heading", { name: /search-garden/ }),
+      ).toBeVisible();
+      for (let i = 0; i < 35; i++)
+        app.locals.db
+          .prepare(
+            "INSERT INTO threads(channel_id,title,body,status_id,created_by,created_at,updated_at) VALUES(1,?,'',1,1,?,?)",
+          )
+          .run(
+            `Pagination result ${i}`,
+            new Date().toISOString(),
+            new Date().toISOString(),
+          );
+      await find("Pagination");
+      await expect(page.locator(".global-search-result")).toHaveCount(30);
+      await page
+        .getByRole("button", { name: "Load more results", exact: true })
+        .click();
+      await expect(page.locator(".global-search-result")).toHaveCount(35);
+      await page
+        .getByLabel("Search everything", { exact: true })
+        .fill("does-not-exist");
+      await expect(page.getByRole("status")).toHaveText("No results found.");
+      await page
+        .getByLabel("Search everything", { exact: true })
+        .fill("garden");
+      await expect(page.locator(".global-search-result").first()).toBeVisible();
+      await page.screenshot({ path: "test-results/search-desktop.png" });
+      await page.keyboard.press("Escape");
+      await page.getByRole("button", { name: "Sign out", exact: true }).click();
+      await page.getByLabel("Username", { exact: true }).fill("alex");
+      await page
+        .getByLabel("Password", { exact: true })
+        .fill("browser-search-person");
+      await page.getByRole("button", { name: "Sign in", exact: true }).click();
+      await expect(
+        page.getByRole("button", { name: "Search everywhere", exact: true }),
+      ).toBeVisible();
+      await find("Private watering");
+      await expect(page.getByRole("status")).toHaveText("No results found.");
+      await page
+        .getByLabel("Search everything", { exact: true })
+        .fill("Greenhouse runtime");
+      await expect(page.getByRole("status")).toHaveText("No results found.");
+      await page.keyboard.press("Escape");
+      await page.setViewportSize({ width: 390, height: 844 });
+      await find("garden");
+      await expect(page.locator(".global-search-result").first()).toBeVisible();
+      assert.ok(
+        await page.evaluate(
+          () => document.documentElement.scrollWidth <= innerWidth,
+        ),
+      );
+      await page.screenshot({ path: "test-results/search-mobile.png" });
+      assert.deepEqual(errors, []);
+    } finally {
+      await browser.close();
+      await new Promise((r) => server.close(r));
+      app.locals.shutdown();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  },
+);

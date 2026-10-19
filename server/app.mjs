@@ -1,4 +1,5 @@
 import express from "express";
+import { searchPlatform } from "./search.mjs";
 import { parseSchedule, deliverSchedules } from "./schedules.mjs";
 import multer from "multer";
 import bcrypt from "bcryptjs";
@@ -281,6 +282,9 @@ export function createApp({
     broadcast();
     res.json(result);
   }
+  app.get("/api/search", (req, res) =>
+    res.json(searchPlatform(db, req.user, req.query)),
+  );
   app.post("/api/notification-schedules", (req, res) => {
     const input = z
       .object({

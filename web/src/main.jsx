@@ -153,13 +153,22 @@ function Empty({ icon = MessageSquare, title, children, action }) {
     </div>
   );
 }
-function Dialog({ title, subtitle, children, onClose, wide = false }) {
+function Dialog({
+  title,
+  subtitle,
+  children,
+  onClose,
+  wide = false,
+  initialFocus = "input,textarea,select,button",
+  backdropClassName = "",
+}) {
   const ref = useRef();
   useEffect(() => {
     const previous = document.activeElement;
     const el = ref.current;
-    el.querySelector("input,textarea,select,button")?.focus();
+    el.querySelector(initialFocus)?.focus();
     const key = (e) => {
+      if (!el.contains(e.target)) return;
       if (e.key === "Escape") onClose();
       if (e.key === "Tab") {
         const nodes = [
@@ -182,7 +191,7 @@ function Dialog({ title, subtitle, children, onClose, wide = false }) {
   }, []);
   return (
     <div
-      className="modal-backdrop"
+      className={`modal-backdrop ${backdropClassName}`}
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
@@ -333,6 +342,167 @@ function reminderInterval(milliseconds) {
   return `${milliseconds} milliseconds`;
 }
 
+function GlobalSearch({ onClose, onChoose, refreshKey }) {
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState([]);
+  const [more, setMore] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const generation = useRef(0);
+  const fetching = useRef(false);
+  const normalized = query.trim();
+  useEffect(() => {
+    const version = ++generation.current;
+    let controller = new AbortController();
+    setResults([]);
+    setMore(false);
+    setError("");
+    setLoading(!!normalized);
+    fetching.current = !!normalized;
+    const timer = setTimeout(async () => {
+      if (!normalized) return;
+      try {
+        const response = await api(
+          "/search?" + new URLSearchParams({ q: normalized }),
+          { signal: controller.signal },
+        );
+        if (version !== generation.current) return;
+        setResults(response.results);
+        setMore(response.has_more);
+      } catch (e) {
+        if (version === generation.current && e.name !== "AbortError")
+          setError(e.message);
+      } finally {
+        if (version === generation.current) {
+          setLoading(false);
+          fetching.current = false;
+        }
+      }
+    }, 220);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+      generation.current++;
+    };
+  }, [normalized, refreshKey]);
+  async function loadMore() {
+    if (fetching.current) return;
+    fetching.current = true;
+    const version = generation.current;
+    setLoading(true);
+    setError("");
+    try {
+      const response = await api(
+        "/search?" +
+          new URLSearchParams({ q: normalized, offset: results.length }),
+      );
+      if (version !== generation.current) return;
+      setResults((previous) => [...previous, ...response.results]);
+      setMore(response.has_more);
+    } catch (e) {
+      if (version === generation.current) setError(e.message);
+    } finally {
+      if (version === generation.current) {
+        setLoading(false);
+        fetching.current = false;
+      }
+    }
+  }
+  return (
+    <Dialog
+      initialFocus='input[aria-label="Search everything"]'
+      title="Search everywhere"
+      backdropClassName="search-backdrop"
+      subtitle="Channels, conversations, replies, people, attachments, and your reminders."
+      onClose={onClose}
+      wide
+    >
+      <div className="global-search-content">
+        <label className="global-search-input">
+          <Search size={19} />
+          <input
+            aria-label="Search everything"
+            placeholder="Search everything…"
+            value={query}
+            maxLength={200}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "ArrowDown") {
+                e.preventDefault();
+                document.querySelector(".global-search-result")?.focus();
+              }
+            }}
+          />
+        </label>
+        <p className="global-search-summary" role="status">
+          {loading
+            ? "Searching…"
+            : !normalized
+              ? "Search across every channel, including archived channels."
+              : results.length
+                ? `${results.length} result${results.length === 1 ? "" : "s"}${more ? " · more available" : ""}`
+                : "No results found."}
+        </p>
+        {error && (
+          <p role="alert" className="form-error">
+            {error}
+          </p>
+        )}
+        <div
+          className="global-search-results"
+          onKeyDown={(e) => {
+            if (!["ArrowDown", "ArrowUp"].includes(e.key)) return;
+            const buttons = [
+              ...e.currentTarget.querySelectorAll(".global-search-result"),
+            ];
+            const index = buttons.indexOf(document.activeElement);
+            if (index < 0) return;
+            e.preventDefault();
+            buttons[
+              (index + (e.key === "ArrowDown" ? 1 : -1) + buttons.length) %
+                buttons.length
+            ]?.focus();
+          }}
+        >
+          {results.map((r) => (
+            <button
+              className="global-search-result"
+              key={`${r.kind}-${r.id}`}
+              onClick={() => onChoose(r)}
+            >
+              <span className="global-search-result-meta">
+                {r.label}
+                {r.channel_name ? ` · #${r.channel_name}` : ""}
+              </span>
+              <strong>
+                {r.kind === "channel" ? "# " : ""}
+                {r.title}
+              </strong>
+              {r.snippet && (
+                <span className="global-search-snippet">{r.snippet}</span>
+              )}
+            </button>
+          ))}
+        </div>
+        {more && (
+          <button
+            className="button secondary global-search-more"
+            disabled={loading}
+            onClick={loadMore}
+          >
+            Load more results
+          </button>
+        )}
+        <p className="global-search-footnote">
+          Search matches text and attachment filenames. File contents are
+          excluded. Reminders are private to you; runtime logs require admin
+          access.
+        </p>
+      </div>
+    </Dialog>
+  );
+}
+
 function App() {
   const [data, setData] = useState(null),
     [auth, setAuth] = useState("loading"),
@@ -346,6 +516,9 @@ function App() {
     [assignee, setAssignee] = useState(""),
     [statusFilter, setStatusFilter] = useState(""),
     [selectedId, setSelectedId] = useState(null),
+    [searchOpen, setSearchOpen] = useState(false),
+    [detailVersion, setDetailVersion] = useState(0),
+    [searchTarget, setSearchTarget] = useState(null),
     [detail, setDetail] = useState(null),
     [modal, setModal] = useState(null),
     [toast, setToast] = useState(null),
@@ -356,6 +529,7 @@ function App() {
     [schedulingReminder, setSchedulingReminder] = useState(false),
     [refreshKey, setRefreshKey] = useState(0);
   const toastTimer = useRef();
+  const searchNavigation = useRef(0);
   const reminderSubmitting = useRef(false);
   const sessionVersion = useRef(0);
   const notify = useCallback((message, error = false) => {
@@ -471,14 +645,32 @@ function App() {
     };
   }, [auth]);
   useEffect(() => {
+    if (!searchTarget || searchOpen) return;
+    const target = document.getElementById(searchTarget);
+    if (target) {
+      target.scrollIntoView({ block: "center" });
+      target.classList.add("search-target");
+      const timer = setTimeout(() => {
+        target.classList.remove("search-target");
+        setSearchTarget(null);
+      }, 3000);
+      return () => {
+        clearTimeout(timer);
+        target.classList.remove("search-target");
+      };
+    }
+  }, [searchTarget, searchOpen, detail, page, inbox, schedules]);
+  useEffect(() => {
     const key = (e) => {
-      if (e.key === "Escape") {
+      if (e.key === "Escape" && !e.target.closest?.(".dialog")) {
         setSelectedId(null);
         setMobile(false);
       }
       if ((e.metaKey || e.ctrlKey) && e.key === "k") {
         e.preventDefault();
-        document.querySelector("#global-search")?.focus();
+        const input = document.querySelector(".global-search-input input");
+        if (input) input.focus();
+        else setSearchOpen(true);
       }
     };
     document.addEventListener("keydown", key);
@@ -508,7 +700,7 @@ function App() {
   }
   function openThread(id) {
     setSelectedId(id);
-    setDetail(null);
+    if (id !== selectedId) setDetail(null);
   }
   const changeStatus = async (id, status) => {
     try {
@@ -668,6 +860,8 @@ function App() {
                 try {
                   await api("/logout", { method: "POST" });
                   setSelectedId(null);
+                  setSearchOpen(false);
+                  setSearchTarget(null);
                   setInbox([]);
                   setSchedules([]);
                   setData(null);
@@ -707,6 +901,16 @@ function App() {
             </strong>
           </div>
           <div className="topbar-right">
+            <button
+              className="global-search-trigger"
+              onClick={() => setSearchOpen(true)}
+              aria-label="Search everywhere"
+              title="Search everywhere (Ctrl/⌘ K)"
+            >
+              <Search size={16} />
+              <span>Search everything…</span>
+              <kbd>⌘ K</kbd>
+            </button>
             <span className={`connection ${connected ? "" : "disconnected"}`}>
               <Wifi size={13} />
               {connected ? "Live" : "Reconnecting"}
@@ -812,12 +1016,12 @@ function App() {
                 <label className="search">
                   <Search size={16} />
                   <input
-                    id="global-search"
+                    id="conversation-search"
+                    aria-label="Filter conversations"
                     placeholder="Search conversations…"
                     value={query}
                     onChange={(e) => setQuery(e.target.value)}
                   />
-                  <kbd>⌘ K</kbd>
                 </label>
                 <label className="filter-select">
                   <SlidersHorizontal size={15} />
@@ -1185,7 +1389,11 @@ function App() {
                 </button>
               </form>
               {schedules.map((schedule) => (
-                <div className="reminder-row" key={schedule.id}>
+                <div
+                  className="reminder-row"
+                  id={`reminder-${schedule.id}`}
+                  key={schedule.id}
+                >
                   <div>
                     <strong>{schedule.message}</strong>
                     <p>
@@ -1215,6 +1423,7 @@ function App() {
                 inbox.map((n) => (
                   <button
                     className={`inbox-item ${!n.read_at ? "unread" : ""}`}
+                    id={`notification-${n.id}`}
                     key={n.id}
                     onClick={async () => {
                       await act("/inbox/read", "POST", { ids: [n.id] }).catch(
@@ -1305,7 +1514,11 @@ function App() {
               </div>
               <div className="team-grid">
                 {data.agents.map((a) => (
-                  <article className="agent-card" key={a.user_id}>
+                  <article
+                    className="agent-card"
+                    id={`person-${a.user_id}`}
+                    key={a.user_id}
+                  >
                     <div className="agent-card-top">
                       <Avatar user={{ name: a.name, kind: "agent" }} />
                       <span className={`state-badge ${agentState(a)}`}>
@@ -1367,7 +1580,11 @@ function App() {
                 {data.users
                   .filter((u) => u.kind === "human")
                   .map((u) => (
-                    <div className="person-row" key={u.id}>
+                    <div
+                      className="person-row"
+                      id={`person-${u.id}`}
+                      key={u.id}
+                    >
                       <Avatar user={u} />
                       <div>
                         <strong>
@@ -1394,6 +1611,38 @@ function App() {
           />
         )}
       </main>
+      {searchOpen && (
+        <GlobalSearch
+          key={data.user.id}
+          refreshKey={refreshKey}
+          onClose={() => setSearchOpen(false)}
+          onChoose={(result) => {
+            setSearchOpen(false);
+            setSearchTarget(null);
+            setModal(null);
+            if (result.kind === "agent-log") {
+              go("team");
+              setModal({
+                type: "agent-detail",
+                id: result.agent_id,
+                initialTab: "logs",
+                instanceKey: ++searchNavigation.current,
+              });
+            } else if (result.thread_id) {
+              setDetailVersion((version) => version + 1);
+              openThread(result.thread_id);
+              if (result.reply_id) setSearchTarget(`reply-${result.reply_id}`);
+            } else if (result.kind === "channel") go("work", result.channel_id);
+            else if (result.kind === "person") {
+              go("team");
+              setSearchTarget(`person-${result.id}`);
+            } else {
+              go("inbox");
+              setSearchTarget(`${result.kind}-${result.id}`);
+            }
+          }}
+        />
+      )}
       {selectedId && (
         <div
           className="detail-shade"
@@ -1409,6 +1658,7 @@ function App() {
           >
             {detail ? (
               <ThreadDetail
+                key={`${selectedId}:${detailVersion}`}
                 thread={detail}
                 data={data}
                 act={act}
@@ -1607,6 +1857,7 @@ function ThreadDetail({ thread: t, data, act, notify, close, edit }) {
   useEffect(() => {
     const key = (e) => {
       if (e.key === "Tab") {
+        if (document.querySelector(".modal-backdrop")) return;
         const root = document.querySelector(".thread-detail");
         const nodes = [
           ...root.querySelectorAll("button,input,textarea,select,a[href]"),
@@ -1740,7 +1991,7 @@ function ThreadDetail({ thread: t, data, act, notify, close, edit }) {
         {tab === "discussion" ? (
           <div className="replies">
             {t.replies.map((r) => (
-              <article className="reply" key={r.id}>
+              <article className="reply" id={`reply-${r.id}`} key={r.id}>
                 <Avatar user={data.users.find((u) => u.id === r.author_id)} />
                 <div className="reply-content">
                   <header>
@@ -2315,7 +2566,9 @@ function ModalRouter({
   if (modal.type === "agent-detail")
     return (
       <AgentDetail
+        key={`${modal.id}:${modal.initialTab || "overview"}:${modal.instanceKey || 0}`}
         id={modal.id}
+        initialTab={modal.initialTab}
         close={close}
         data={data}
         act={act}
@@ -2726,9 +2979,16 @@ async function copy(value, notify) {
     );
   }
 }
-function AgentDetail({ id, close, data, act, notify }) {
+function AgentDetail({
+  id,
+  initialTab = "overview",
+  close,
+  data,
+  act,
+  notify,
+}) {
   const [agent, setAgent] = useState(null),
-    [tab, setTab] = useState("overview"),
+    [tab, setTab] = useState(initialTab),
     [busy, setBusy] = useState(false),
     [newToken, setNewToken] = useState(null);
   const load = useCallback(

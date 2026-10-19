@@ -41,6 +41,7 @@ test("real MCP transport performs board actions, uploads, downloads and enforces
     const tools = await client.listTools();
     assert.ok(tools.tools.length >= 20);
     for (const name of [
+      "search_platform",
       "schedule_notification",
       "list_scheduled_notifications",
       "cancel_scheduled_notification",
@@ -75,6 +76,12 @@ test("real MCP transport performs board actions, uploads, downloads and enforces
       title: "Created through MCP",
       body: "Shared with humans",
     });
+    const search = await tool("search_platform", {
+      query: "Created through MCP",
+      limit: 1,
+    });
+    assert.equal(search.results[0].thread_id, t.id);
+    assert.equal(search.results[0].kind, "thread");
     writeFileSync(join(dir, "notes.txt"), "A local workspace artifact");
     const a = await tool("upload_attachment", { path: "notes.txt" });
     const r = await tool("post_reply", {
