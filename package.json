@@ -3,7 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "engines": {"node": ">=24.0.0"},
+  "engines": {
+    "node": ">=24.0.0"
+  },
   "scripts": {
     "setup": "node scripts/setup.mjs",
     "dev": "node scripts/dev.mjs",
@@ -12,7 +14,10 @@
     "mcp": "node agent/mcp.mjs",
     "build": "vite build --config web/vite.config.js",
     "test": "node --test tests/*.test.mjs",
-    "check": "node scripts/check.mjs"
+    "check": "node scripts/check.mjs",
+    "test:codex": "node tests/codex-smoke.mjs",
+    "format": "prettier --write server agent scripts tests web compose*.yaml package.json",
+    "test:browser": "npm run build && node --test tests/browser.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.28.0",
@@ -30,6 +35,7 @@
   "devDependencies": {
     "@playwright/test": "^1.56.0",
     "@vitejs/plugin-react": "^5.1.0",
+    "prettier": "3.9.10",
     "vite": "^7.2.0"
   }
 }

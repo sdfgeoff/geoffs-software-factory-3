@@ -1,11 +1,11 @@
-import { DatabaseSync } from 'node:sqlite';
-import { mkdirSync } from 'node:fs';
-import { dirname } from 'node:path';
-import { randomBytes, createHash } from 'node:crypto';
-import bcrypt from 'bcryptjs';
+import { DatabaseSync } from "node:sqlite";
+import { mkdirSync } from "node:fs";
+import { dirname } from "node:path";
+import { randomBytes, createHash } from "node:crypto";
+import bcrypt from "bcryptjs";
 
-export const hash = value => createHash('sha256').update(value).digest('hex');
-export const token = () => randomBytes(32).toString('hex');
+export const hash = (value) => createHash("sha256").update(value).digest("hex");
+export const token = () => randomBytes(32).toString("hex");
 export const now = () => new Date().toISOString();
 export function openDatabase(path) {
   mkdirSync(dirname(path), { recursive: true });
@@ -34,30 +34,83 @@ export function openDatabase(path) {
     CREATE TABLE IF NOT EXISTS mutations (user_id INTEGER NOT NULL REFERENCES users(id), key TEXT NOT NULL, response TEXT NOT NULL, PRIMARY KEY(user_id,key));
     PRAGMA user_version=1;
   `);
-  if (!db.prepare('SELECT 1 FROM statuses').get()) {
-    for (const [i, name, color] of [[0,'Backlog','#94a3b8'],[1,'Ready','#8b91f7'],[2,'In progress','#e5ad54'],[3,'In review','#bf8df1'],[4,'Done','#59c9a5']]) {
-      db.prepare('INSERT INTO statuses(name,color,position) VALUES(?,?,?)').run(name,color,i);
+  if (!db.prepare("SELECT 1 FROM statuses").get()) {
+    for (const [i, name, color] of [
+      [0, "Backlog", "#94a3b8"],
+      [1, "Ready", "#8b91f7"],
+      [2, "In progress", "#e5ad54"],
+      [3, "In review", "#bf8df1"],
+      [4, "Done", "#59c9a5"],
+    ]) {
+      db.prepare("INSERT INTO statuses(name,color,position) VALUES(?,?,?)").run(
+        name,
+        color,
+        i,
+      );
     }
   }
   return db;
 }
 export function transaction(db, fn) {
-  db.exec('BEGIN IMMEDIATE');
-  try { const result = fn(); db.exec('COMMIT'); return result; }
-  catch (error) { db.exec('ROLLBACK'); throw error; }
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    const result = fn();
+    db.exec("COMMIT");
+    return result;
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
 }
 export function bootstrap(db, env) {
   if (!db.prepare("SELECT 1 FROM users WHERE kind='human'").get()) {
-    if (!env.ADMIN_PASSWORD || env.ADMIN_PASSWORD.length < 10) throw new Error('Run npm run setup first: ADMIN_PASSWORD must have at least 10 characters.');
-    const user = db.prepare("INSERT INTO users(username,name,kind,admin,password,created_at) VALUES(?,?,'human',1,?,?) RETURNING *").get(env.ADMIN_USERNAME || 'admin', env.ADMIN_NAME || 'Admin', bcrypt.hashSync(env.ADMIN_PASSWORD,12), now());
-    db.prepare('INSERT INTO channels(name,description,created_by,created_at) VALUES(?,?,?,?)').run('general','Announcements, ideas, and shared work.',user.id,now());
+    if (!env.ADMIN_PASSWORD || env.ADMIN_PASSWORD.length < 10)
+      throw new Error(
+        "Run npm run setup first: ADMIN_PASSWORD must have at least 10 characters.",
+      );
+    const user = db
+      .prepare(
+        "INSERT INTO users(username,name,kind,admin,password,created_at) VALUES(?,?,'human',1,?,?) RETURNING *",
+      )
+      .get(
+        env.ADMIN_USERNAME || "admin",
+        env.ADMIN_NAME || "Admin",
+        bcrypt.hashSync(env.ADMIN_PASSWORD, 12),
+        now(),
+      );
+    db.prepare(
+      "INSERT INTO channels(name,description,created_by,created_at) VALUES(?,?,?,?)",
+    ).run("general", "Announcements, ideas, and shared work.", user.id, now());
   }
-  for (const [key, name, role] of [['SPARK','Spark','A thoughtful engineering teammate. Investigate issues, build solutions, and collaborate with the team.'],['SAGE','Sage','A product and review teammate. Clarify requirements, review work, and help the team make decisions.']]) {
+  for (const [key, name, role] of [
+    [
+      "SPARK",
+      "Spark",
+      "A thoughtful engineering teammate. Investigate issues, build solutions, and collaborate with the team.",
+    ],
+    [
+      "SAGE",
+      "Sage",
+      "A product and review teammate. Clarify requirements, review work, and help the team make decisions.",
+    ],
+  ]) {
     const credential = env[`AGENT_${key}_TOKEN`];
-    if (credential && !db.prepare('SELECT 1 FROM users WHERE username=?').get(key.toLowerCase())) {
-      const user = db.prepare("INSERT INTO users(username,name,kind,token_hash,created_at) VALUES(?,?,'agent',?,?) RETURNING *").get(key.toLowerCase(),name,hash(credential),now());
-      db.prepare('INSERT INTO agents(user_id,role) VALUES(?,?)').run(user.id,role);
-      db.prepare('INSERT INTO channel_subscriptions(channel_id,user_id) SELECT id,? FROM channels').run(user.id);
+    if (
+      credential &&
+      !db.prepare("SELECT 1 FROM users WHERE username=?").get(key.toLowerCase())
+    ) {
+      const user = db
+        .prepare(
+          "INSERT INTO users(username,name,kind,token_hash,created_at) VALUES(?,?,'agent',?,?) RETURNING *",
+        )
+        .get(key.toLowerCase(), name, hash(credential), now());
+      db.prepare("INSERT INTO agents(user_id,role) VALUES(?,?)").run(
+        user.id,
+        role,
+      );
+      db.prepare(
+        "INSERT INTO channel_subscriptions(channel_id,user_id) SELECT id,? FROM channels",
+      ).run(user.id);
     }
   }
 }
