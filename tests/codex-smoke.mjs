@@ -51,8 +51,8 @@ try {
   const mcp = status.data.find((s) => s.name === "threadwork");
   assert.ok(mcp, "MCP server is configured");
   assert.ok(
-    Object.keys(mcp.tools).length >= 16,
-    "Codex discovered board tools",
+    Object.keys(mcp.tools).length >= 20,
+    "Codex discovered board and reminder tools",
   );
   await client.call("thread/inject_items", {
     threadId: thread.thread.id,

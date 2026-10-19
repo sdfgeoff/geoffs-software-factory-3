@@ -315,6 +315,24 @@ function Login({ onLogin }) {
     </main>
   );
 }
+function reminderInterval(milliseconds) {
+  if (!Number.isSafeInteger(milliseconds) || milliseconds <= 0)
+    return "unknown interval";
+  for (const [unit, size] of [
+    ["week", 604800000],
+    ["day", 86400000],
+    ["hour", 3600000],
+    ["minute", 60000],
+    ["second", 1000],
+  ]) {
+    if (milliseconds % size === 0) {
+      const count = milliseconds / size;
+      return `${count} ${unit}${count === 1 ? "" : "s"}`;
+    }
+  }
+  return `${milliseconds} milliseconds`;
+}
+
 function App() {
   const [data, setData] = useState(null),
     [auth, setAuth] = useState("loading"),
@@ -334,8 +352,12 @@ function App() {
     [mobile, setMobile] = useState(false),
     [connected, setConnected] = useState(true),
     [inbox, setInbox] = useState([]),
+    [schedules, setSchedules] = useState([]),
+    [schedulingReminder, setSchedulingReminder] = useState(false),
     [refreshKey, setRefreshKey] = useState(0);
   const toastTimer = useRef();
+  const reminderSubmitting = useRef(false);
+  const sessionVersion = useRef(0);
   const notify = useCallback((message, error = false) => {
     clearTimeout(toastTimer.current);
     setToast({ message, error });
@@ -343,12 +365,18 @@ function App() {
   }, []);
   const refresh = useCallback(() => setRefreshKey((k) => k + 1), []);
   const load = useCallback(async () => {
+    const version = sessionVersion.current;
     try {
       const b = await api("/bootstrap");
+      if (version !== sessionVersion.current) return;
       setData(b);
       setAuth("signedIn");
     } catch (e) {
+      if (version !== sessionVersion.current) return;
       if (e.status === 401) {
+        sessionVersion.current += 1;
+        setInbox([]);
+        setSchedules([]);
         setAuth("signedOut");
         setData(null);
       } else notify(e.message, true);
@@ -408,11 +436,23 @@ function App() {
     };
   }, [selectedId, refreshKey]);
   useEffect(() => {
-    if (page === "inbox" && auth === "signedIn")
-      api("/inbox")
-        .then(setInbox)
-        .catch((e) => notify(e.message, true));
-  }, [page, auth, refreshKey]);
+    if (page !== "inbox" || auth !== "signedIn") return;
+    let stale = false;
+    const version = sessionVersion.current;
+    Promise.all([api("/inbox"), api("/notification-schedules")])
+      .then(([items, scheduled]) => {
+        if (stale || version !== sessionVersion.current) return;
+        setInbox(items);
+        setSchedules(scheduled);
+      })
+      .catch((e) => {
+        if (!stale && version === sessionVersion.current)
+          notify(e.message, true);
+      });
+    return () => {
+      stale = true;
+    };
+  }, [page, auth, refreshKey, data?.user.id]);
   useEffect(() => {
     if (auth !== "signedIn") return;
     const es = new EventSource("/api/events");
@@ -624,9 +664,17 @@ function App() {
               aria-label="Sign out"
               title="Sign out"
               onClick={async () => {
-                await api("/logout", { method: "POST" });
-                setSelectedId(null);
-                setAuth("signedOut");
+                sessionVersion.current += 1;
+                try {
+                  await api("/logout", { method: "POST" });
+                  setSelectedId(null);
+                  setInbox([]);
+                  setSchedules([]);
+                  setData(null);
+                  setAuth("signedOut");
+                } catch (error) {
+                  notify(error.message, true);
+                }
               }}
             >
               <LogOut size={17} />
@@ -1068,6 +1116,100 @@ function App() {
                 Mark all read
               </button>
             </section>
+            <section className="reminder-panel">
+              <h2>Schedule a reminder</h2>
+              <form
+                onSubmit={async (event) => {
+                  event.preventDefault();
+                  if (reminderSubmitting.current) return;
+                  const form = event.currentTarget;
+                  const values = new FormData(form);
+                  reminderSubmitting.current = true;
+                  setSchedulingReminder(true);
+                  try {
+                    await act("/notification-schedules", "POST", {
+                      message: values.get("message"),
+                      when: values.get("when").trim(),
+                      ...(values.get("repeat").trim()
+                        ? { repeat: values.get("repeat").trim() }
+                        : {}),
+                    });
+                    form.reset();
+                    notify("Reminder scheduled");
+                  } catch {
+                    /* act displays the error */
+                  } finally {
+                    reminderSubmitting.current = false;
+                    setSchedulingReminder(false);
+                  }
+                }}
+              >
+                <label>
+                  Reminder message
+                  <input
+                    name="message"
+                    required
+                    maxLength={50000}
+                    disabled={schedulingReminder}
+                  />
+                </label>
+                <label>
+                  When
+                  <input
+                    name="when"
+                    required
+                    disabled={schedulingReminder}
+                    aria-describedby="reminder-time-help"
+                    placeholder="in one hour or 2027-01-01T09:00:00Z"
+                  />
+                </label>
+                <label>
+                  Repeat (optional)
+                  <input
+                    name="repeat"
+                    placeholder="every 1 day"
+                    disabled={schedulingReminder}
+                    aria-describedby="reminder-time-help"
+                  />
+                </label>
+                <p id="reminder-time-help">
+                  Use seconds, minutes, hours, days or weeks. Absolute times
+                  require Z or a timezone offset. Repeats use elapsed time.
+                </p>
+                <button
+                  className="button"
+                  type="submit"
+                  disabled={schedulingReminder}
+                >
+                  {schedulingReminder ? "Scheduling…" : "Schedule reminder"}
+                </button>
+              </form>
+              {schedules.map((schedule) => (
+                <div className="reminder-row" key={schedule.id}>
+                  <div>
+                    <strong>{schedule.message}</strong>
+                    <p>
+                      {new Date(schedule.due_at).toLocaleString()}
+                      {schedule.interval_ms
+                        ? ` · every ${reminderInterval(schedule.interval_ms)}`
+                        : ""}
+                    </p>
+                  </div>
+                  <button
+                    className="button"
+                    onClick={() =>
+                      act(
+                        `/notification-schedules/${schedule.id}`,
+                        "DELETE",
+                      ).catch(() => {})
+                    }
+                    aria-label={`Cancel reminder: ${schedule.message}`}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              ))}
+            </section>
             <div className="inbox-list">
               {inbox.length ? (
                 inbox.map((n) => (
@@ -1087,23 +1229,30 @@ function App() {
                     <div>
                       <div className="inbox-title">
                         <strong>{n.actor_name}</strong>{" "}
-                        {n.type === "reply.created"
-                          ? "replied to"
-                          : n.type === "thread.created"
-                            ? "started"
-                            : n.type === "reply.edited"
-                              ? "edited a reply in"
-                              : "updated"}{" "}
+                        {n.type === "notification.scheduled"
+                          ? "scheduled"
+                          : n.type === "reply.created"
+                            ? "replied to"
+                            : n.type === "thread.created"
+                              ? "started"
+                              : n.type === "reply.edited"
+                                ? "edited a reply in"
+                                : "updated"}{" "}
                         <strong>{n.payload.title || "a thread"}</strong>
                       </div>
                       <p>
-                        {n.payload.body?.slice(0, 160) ||
+                        {(n.type === "notification.scheduled"
+                          ? n.payload.body
+                          : n.payload.body?.slice(0, 160)) ||
                           Object.keys(n.payload.changes || {})
                             .map((k) => k.replace("_id", ""))
                             .join(", ") + " changed"}
                       </p>
                       <span>
-                        #{n.channel_name} <span className="meta-dot">·</span>{" "}
+                        {n.channel_name
+                          ? `#${n.channel_name}`
+                          : "Private reminder"}{" "}
+                        <span className="meta-dot">·</span>{" "}
                         {timeAgo(n.created_at)}
                       </span>
                     </div>

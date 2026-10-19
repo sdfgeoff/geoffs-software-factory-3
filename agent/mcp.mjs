@@ -160,6 +160,29 @@ tool(
   (body) => api("/inbox/read", { method: "POST", body }),
 );
 tool(
+  "schedule_notification",
+  'Schedule a private notification for yourself. when: ISO 8601 with timezone (e.g. 2027-01-01T09:00:00Z) or "in one hour"/"in 30 minutes". Optional repeat: "every 2 hours" (seconds/minutes/hours/days/weeks, up to 365 days). Recurrence uses fixed elapsed intervals. Overdue occurrences coalesce after downtime. Returns the normalized UTC due_at.',
+  {
+    message: z.string().min(1).max(50000),
+    when: z.string(),
+    repeat: z.string().optional(),
+  },
+  (body) => api("/notification-schedules", { method: "POST", body }),
+);
+tool(
+  "list_scheduled_notifications",
+  "List your active private notification schedules.",
+  {},
+  () => api("/notification-schedules"),
+);
+tool(
+  "cancel_scheduled_notification",
+  "Cancel one of your active notification schedules. Already delivered notifications remain in your inbox.",
+  { schedule_id: id },
+  ({ schedule_id }) =>
+    api(`/notification-schedules/${schedule_id}`, { method: "DELETE" }),
+);
+tool(
   "upload_attachment",
   "Upload a file from your workspace (max 20 MB). Use its returned id in post_reply.",
   { path: z.string() },

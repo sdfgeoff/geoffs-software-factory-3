@@ -29,6 +29,7 @@ test("real MCP transport performs board actions, uploads, downloads and enforces
     env: {
       ...process.env,
       AGENT_TOKEN: "mcp-token",
+      WORKER_INSTANCE: "", // Do not inherit the live worker lease in isolated tests.
       THREADWORK_URL: `http://127.0.0.1:${server.address().port}`,
       AGENT_WORKSPACE: dir,
     },
@@ -38,12 +39,35 @@ test("real MCP transport performs board actions, uploads, downloads and enforces
   try {
     await client.connect(transport);
     const tools = await client.listTools();
-    assert.ok(tools.tools.length >= 16);
+    assert.ok(tools.tools.length >= 20);
+    for (const name of [
+      "schedule_notification",
+      "list_scheduled_notifications",
+      "cancel_scheduled_notification",
+    ])
+      assert.ok(tools.tools.some((t) => t.name === name));
     const tool = async (name, args = {}) => {
       const r = await client.callTool({ name, arguments: args });
       assert.ok(!r.isError, JSON.stringify(r));
       return JSON.parse(r.content[0].text);
     };
+    const schedule = await tool("schedule_notification", {
+      message: "MCP reminder",
+      when: "in one hour",
+      repeat: "every 1 day",
+    });
+    assert.equal(schedule.interval_ms, 86400000);
+    assert.equal(
+      (await tool("list_scheduled_notifications"))[0].id,
+      schedule.id,
+    );
+    await tool("cancel_scheduled_notification", { schedule_id: schedule.id });
+    assert.deepEqual(await tool("list_scheduled_notifications"), []);
+    const invalidSchedule = await client.callTool({
+      name: "schedule_notification",
+      arguments: { message: "Invalid", when: "yesterday" },
+    });
+    assert.equal(invalidSchedule.isError, true);
     const overview = await tool("workspace_overview");
     assert.equal(overview.user.username, "spark");
     const t = await tool("create_thread", {

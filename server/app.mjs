@@ -1,4 +1,5 @@
 import express from "express";
+import { parseSchedule, deliverSchedules } from "./schedules.mjs";
 import multer from "multer";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
@@ -280,6 +281,55 @@ export function createApp({
     broadcast();
     res.json(result);
   }
+  app.post("/api/notification-schedules", (req, res) => {
+    const input = z
+      .object({
+        message: z.string().trim().min(1).max(50000),
+        when: z.string().min(1).max(100),
+        repeat: z.string().min(1).max(100).optional(),
+      })
+      .strict()
+      .parse(req.body);
+    mutate(req, res, () => {
+      let schedule;
+      try {
+        schedule = parseSchedule(input.when, input.repeat);
+      } catch (error) {
+        fail(400, error.message);
+      }
+      return db
+        .prepare(
+          "INSERT INTO notification_schedules(user_id,message,due_at,interval_ms,created_at) VALUES(?,?,?,?,?) RETURNING *",
+        )
+        .get(
+          req.user.id,
+          input.message,
+          schedule.due_at,
+          schedule.interval_ms,
+          now(),
+        );
+    });
+  });
+  app.get("/api/notification-schedules", (req, res) =>
+    res.json(
+      db
+        .prepare(
+          "SELECT * FROM notification_schedules WHERE user_id=? AND state='active' ORDER BY due_at,id",
+        )
+        .all(req.user.id),
+    ),
+  );
+  app.delete("/api/notification-schedules/:id", (req, res) =>
+    mutate(req, res, () => {
+      const schedule = db
+        .prepare(
+          "UPDATE notification_schedules SET state='cancelled' WHERE id=? AND user_id=? AND state='active' RETURNING *",
+        )
+        .get(positive.parse(req.params.id), req.user.id);
+      if (!schedule) fail(404, "Active schedule not found");
+      return schedule;
+    }),
+  );
   app.post("/api/logout", (req, res) => {
     if (req.session)
       db.prepare("DELETE FROM sessions WHERE token_hash=?").run(
@@ -1094,8 +1144,30 @@ export function createApp({
       error: error.status ? error.message : "Unexpected server error",
     });
   });
+  const runSchedules = () => {
+    if (deliverSchedules(db)) broadcast();
+  };
+  // Recover overdue reminders before accepting traffic, closing the handle on failure.
+  try {
+    runSchedules();
+  } catch (error) {
+    db.close();
+    throw error;
+  }
+  const scheduleTimer = setInterval(() => {
+    try {
+      runSchedules();
+    } catch (error) {
+      console.error("Notification scheduler failed", error);
+    }
+  }, 1000);
+  scheduleTimer.unref();
   app.locals.db = db;
+  let closed = false;
   app.locals.shutdown = () => {
+    if (closed) return;
+    closed = true;
+    clearInterval(scheduleTimer);
     for (const response of streams) response.end();
     db.close();
   };

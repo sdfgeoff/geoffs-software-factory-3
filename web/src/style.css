@@ -3126,3 +3126,35 @@ code {
     grid-template-columns: 1fr;
   }
 }
+.reminder-panel {
+  margin-bottom: 24px;
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+.reminder-panel form {
+  display: grid;
+  gap: 12px;
+}
+.reminder-panel label {
+  display: grid;
+  gap: 6px;
+}
+.reminder-panel input {
+  width: 100%;
+}
+.reminder-panel p {
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.reminder-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  margin-top: 16px;
+}
+.reminder-row > div {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}

@@ -45,8 +45,15 @@ export function openDatabase(path) {
       db.exec(
         "ALTER TABLE attachments ADD COLUMN thread_id INTEGER REFERENCES threads(id)",
       );
-    if (db.prepare("PRAGMA user_version").get().user_version < 2)
-      db.exec("PRAGMA user_version=2");
+    db.exec(`CREATE TABLE IF NOT EXISTS notification_schedules (
+      id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id),
+      message TEXT NOT NULL, due_at TEXT NOT NULL, interval_ms INTEGER,
+      state TEXT NOT NULL DEFAULT 'active' CHECK(state IN ('active','completed','cancelled')),
+      created_at TEXT NOT NULL, last_fired_at TEXT
+    );
+    CREATE INDEX IF NOT EXISTS schedule_due ON notification_schedules(state,due_at);`);
+    if (db.prepare("PRAGMA user_version").get().user_version < 3)
+      db.exec("PRAGMA user_version=3");
   });
   if (!db.prepare("SELECT 1 FROM statuses").get()) {
     for (const [i, name, color] of [
