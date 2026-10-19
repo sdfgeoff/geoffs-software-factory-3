@@ -615,3 +615,216 @@ test("agent login codes and worker control fields are restricted to administrato
     "private-device-code",
   );
 });
+
+test("message creation generates readable titles and preserves explicit titles", async () => {
+  for (const body of [{}, { title: "  ", body: " \n " }])
+    assert.equal(
+      (
+        await request("/threads", {
+          method: "POST",
+          body: { channel_id: 1, ...body },
+        })
+      ).status,
+      400,
+    );
+  const message =
+    "\n# **Investigate** the [build](https://example.com)\nPlease help @sage";
+  const created = await request("/threads", {
+    method: "POST",
+    body: { channel_id: 1, body: message },
+  });
+  assert.equal(created.status, 200);
+  assert.equal(created.data.title, "Investigate the build");
+  assert.equal(created.data.body, message);
+  const inbox = (
+    await request("/inbox", { auth: "Bearer " + env.AGENT_SAGE_TOKEN })
+  ).data;
+  assert.ok(inbox.some((n) => n.thread_id === created.data.id));
+  const edited = await request(`/threads/${created.data.id}`, {
+    method: "PATCH",
+    body: { body: "A different opening message" },
+  });
+  assert.equal(
+    edited.data.title,
+    "Investigate the build",
+    "generated titles remain stable when body changes",
+  );
+  const long = await request("/threads", {
+    method: "POST",
+    body: { channel_id: 1, body: "A meaningful message ".repeat(20) },
+  });
+  assert.ok(long.data.title.length <= 80);
+  assert.ok(long.data.title.endsWith("…"));
+  const explicit = await request("/threads", {
+    method: "POST",
+    body: { channel_id: 1, title: "  Custom title  ", body: "Message body" },
+  });
+  assert.equal(explicit.data.title, "Custom title");
+});
+
+test("opening attachments enforce ownership, publish atomically and support retries", async () => {
+  const upload = async (name) => {
+    const form = new FormData();
+    form.set(
+      "file",
+      new Blob(["opening attachment"], { type: "text/plain" }),
+      name,
+    );
+    const result = await request("/attachments", {
+      method: "POST",
+      body: form,
+    });
+    assert.equal(result.status, 200);
+    return result.data;
+  };
+  const opening = await upload("design-notes.txt");
+  assert.equal(
+    (await request(`/attachments/${opening.id}`, { auth: personCookie }))
+      .status,
+    403,
+  );
+  assert.equal(
+    (
+      await request("/threads", {
+        auth: personCookie,
+        method: "POST",
+        body: { channel_id: 1, attachment_ids: [opening.id] },
+      })
+    ).status,
+    400,
+  );
+  assert.equal(
+    (
+      await request("/threads", {
+        method: "POST",
+        body: { channel_id: 1, attachment_ids: [opening.id, randomUUID()] },
+      })
+    ).status,
+    400,
+  );
+  const db = app.locals.db;
+  const counts = () =>
+    ["threads", "events", "notifications", "mutations"].map(
+      (table) => db.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get().n,
+    );
+  const before = counts();
+  // Fail after event insertion and attachment assignment, while fan-out is running.
+  db.exec(
+    "CREATE TEMP TRIGGER fail_opening_notification BEFORE INSERT ON notifications BEGIN SELECT RAISE(ABORT, 'FOREIGN KEY constraint (test)'); END",
+  );
+  const body = { channel_id: 1, attachment_ids: [opening.id] };
+  const headers = { "Idempotency-Key": "opening-attachment-retry" };
+  try {
+    assert.equal(
+      (await request("/threads", { method: "POST", body, headers })).status,
+      400,
+    );
+    assert.deepEqual(counts(), before);
+    assert.equal(
+      db.prepare("SELECT thread_id FROM attachments WHERE id=?").get(opening.id)
+        .thread_id,
+      null,
+    );
+  } finally {
+    db.exec("DROP TRIGGER fail_opening_notification");
+  }
+  const created = await request("/threads", { method: "POST", body, headers });
+  assert.equal(created.status, 200);
+  assert.equal(created.data.title, "design-notes.txt");
+  assert.equal(created.data.body, "");
+  const committed = counts();
+  const retry = await request("/threads", { method: "POST", body, headers });
+  assert.deepEqual(retry, created);
+  assert.deepEqual(counts(), committed);
+  const detail = (
+    await request(`/threads/${created.data.id}`, { auth: personCookie })
+  ).data;
+  assert.equal(detail.attachments[0].id, opening.id);
+  assert.equal(detail.replies.length, 0);
+  assert.deepEqual(detail.activity[0].payload.attachment_ids, [opening.id]);
+  const download = await fetch(url + `/api/attachments/${opening.id}`, {
+    headers: { Cookie: personCookie },
+  });
+  assert.equal(download.status, 200);
+  assert.equal(await download.text(), "opening attachment");
+  assert.equal(
+    (await request(`/attachments/${opening.id}`, { method: "DELETE" })).status,
+    404,
+  );
+  for (const path of ["/threads", `/threads/${created.data.id}/replies`])
+    assert.equal(
+      (
+        await request(path, {
+          method: "POST",
+          body: { channel_id: 1, body: "Reuse", attachment_ids: [opening.id] },
+        })
+      ).status,
+      400,
+    );
+  const pending = await upload("unposted.txt");
+  assert.equal(
+    (await request(`/attachments/${pending.id}`, { method: "DELETE" })).status,
+    200,
+  );
+});
+
+test("v1 migration preserves reply attachments and is idempotent", async () => {
+  const { openDatabase, bootstrap } = await import("../server/db.mjs");
+  const dir = mkdtempSync(join(tmpdir(), "threadwork-migration-"));
+  const path = join(dir, "v1.sqlite");
+  let db;
+  try {
+    db = openDatabase(path);
+    bootstrap(db, { ADMIN_PASSWORD: "migration-password" });
+    db.exec(
+      "ALTER TABLE attachments DROP COLUMN thread_id; PRAGMA user_version=1;",
+    );
+    db.exec(`INSERT INTO threads VALUES(1,1,'Existing thread','Opening message',1,NULL,1,'stamp','stamp');
+      INSERT INTO replies VALUES(1,1,1,'Existing reply','stamp',NULL);
+      INSERT INTO attachments VALUES('legacy-attachment',1,1,'legacy.png','image/png',42,'stamp');`);
+    db.close();
+    db = openDatabase(path);
+    assert.equal(db.prepare("PRAGMA user_version").get().user_version, 2);
+    const expected = {
+      id: "legacy-attachment",
+      reply_id: 1,
+      owner_id: 1,
+      name: "legacy.png",
+      mime: "image/png",
+      size: 42,
+      created_at: "stamp",
+      thread_id: null,
+    };
+    assert.deepEqual(
+      { ...db.prepare("SELECT * FROM attachments").get() },
+      expected,
+    );
+    assert.equal(
+      db.prepare("SELECT body FROM replies WHERE id=1").get().body,
+      "Existing reply",
+    );
+    assert.equal(db.prepare("PRAGMA foreign_key_check").all().length, 0);
+    assert.ok(
+      db
+        .prepare("PRAGMA foreign_key_list(attachments)")
+        .all()
+        .some((fk) => fk.from === "thread_id" && fk.table === "threads"),
+    );
+    db.close();
+    db = openDatabase(path);
+    assert.deepEqual(
+      { ...db.prepare("SELECT * FROM attachments").get() },
+      expected,
+    );
+    assert.equal(
+      db
+        .prepare("PRAGMA table_info(attachments)")
+        .all()
+        .filter((c) => c.name === "thread_id").length,
+      1,
+    );
+  } finally {
+    db?.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

@@ -3046,3 +3046,83 @@ code {
   -webkit-line-clamp: 3;
   max-height: none;
 }
+
+.new-message-composer {
+  margin: 18px 30px 6px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+.new-message-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 12px;
+  font-size: 12px;
+}
+.new-message-heading > span {
+  color: var(--muted);
+}
+.new-message-heading label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.new-message-heading select,
+.composer-option-fields input,
+.composer-option-fields select {
+  padding: 7px 9px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: white;
+  color: inherit;
+  min-width: 0;
+  max-width: 100%;
+}
+.composer-options {
+  margin-top: 10px;
+  font-size: 11px;
+}
+.composer-options summary {
+  cursor: pointer;
+  color: #728b5d;
+}
+.composer-option-fields {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr;
+  gap: 10px;
+  margin-top: 10px;
+}
+.composer-option-fields label {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+.pending-preview {
+  width: 38px;
+  height: 38px;
+  object-fit: cover;
+  border-radius: 3px;
+}
+.composer-error {
+  color: #a24037;
+  font-size: 12px;
+  margin: 8px 0;
+}
+.dialog .new-message-composer {
+  margin: 0;
+  border: 0;
+  padding: 20px 25px;
+}
+@media (max-width: 700px) {
+  .new-message-composer {
+    margin: 12px 14px 6px;
+    padding: 12px;
+  }
+  .composer-option-fields {
+    grid-template-columns: 1fr;
+  }
+}

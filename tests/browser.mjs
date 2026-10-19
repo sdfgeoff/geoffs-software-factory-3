@@ -87,42 +87,81 @@ test(
       await expect(
         page.getByRole("button", { name: "Subscribed", exact: true }),
       ).toBeVisible();
-      await page
-        .getByRole("button", { name: "New thread", exact: true })
-        .click();
-      await page
-        .getByLabel("Title", { exact: true })
-        .fill("Design an approachable onboarding flow");
-      await page
-        .getByLabel("Description", { exact: true })
-        .fill(
-          "A first impression that helps people find their next step. @spark, bring your perspective.",
-        );
-      await page
-        .getByLabel("Status", { exact: true })
-        .selectOption({ label: "Ready" });
-      await page
-        .getByLabel("Assignee", { exact: true })
-        .selectOption({ label: "Spark · AI" });
-      await page
-        .getByRole("button", { name: "Create thread", exact: true })
-        .click();
-      await expect(
-        page.getByRole("heading", {
-          name: "Design an approachable onboarding flow",
-        }),
-      ).toBeVisible();
-      await page
-        .getByLabel("Reply", { exact: true })
-        .fill("Here is a first visual direction.");
-      await page.locator("input[type=file]").setInputFiles({
-        name: "direction.png",
+      const generatedTitle = "Design an approachable onboarding flow";
+      const editedTitle = "Design an approachable onboarding flow together";
+      const openingBody = `${generatedTitle}\n\nA first impression that helps people find their next step. @spark, bring your perspective.`;
+      const imageFile = (name) => ({
+        name,
         mimeType: "image/png",
         buffer: Buffer.from(
           "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aHo0AAAAASUVORK5CYII=",
           "base64",
         ),
       });
+      await page.getByLabel("Message", { exact: true }).fill(openingBody);
+      await page
+        .getByLabel("Attach files to message", { exact: true })
+        .setInputFiles(imageFile("opening.png"));
+      await expect(
+        page.getByText("opening.png", { exact: true }),
+      ).toBeVisible();
+      const failCreation = async (route) => {
+        if (route.request().method() === "POST") {
+          await route.fulfill({
+            status: 503,
+            contentType: "application/json",
+            body: JSON.stringify({ error: "Temporary test failure" }),
+          });
+        } else await route.continue();
+      };
+      await page.route("**/api/threads", failCreation);
+      await page.getByRole("button", { name: "Send", exact: true }).click();
+      await expect(
+        page.getByRole("alert").filter({ hasText: "Temporary test failure" }),
+      ).toBeVisible();
+      await expect(page.getByLabel("Message", { exact: true })).toHaveValue(
+        openingBody,
+      );
+      await expect(
+        page.getByText("opening.png", { exact: true }),
+      ).toBeVisible();
+      await page.unroute("**/api/threads", failCreation);
+      await page.getByRole("button", { name: "Send", exact: true }).click();
+      await expect(
+        page.locator(".thread-row").filter({ hasText: generatedTitle }),
+      ).toBeVisible();
+      await page
+        .locator(".thread-row")
+        .filter({ hasText: generatedTitle })
+        .click();
+      await expect(
+        page.getByRole("heading", { name: generatedTitle, exact: true }),
+      ).toBeVisible();
+      await expect(page.locator(".thread-description img")).toBeVisible();
+      await page
+        .getByRole("button", { name: "Edit thread", exact: true })
+        .click();
+      await page.getByLabel("Title", { exact: true }).fill(editedTitle);
+      await page
+        .getByLabel("Status", { exact: true })
+        .last()
+        .selectOption({ label: "Ready" });
+      await page
+        .getByLabel("Assignee", { exact: true })
+        .last()
+        .selectOption({ label: "Spark · AI" });
+      await page
+        .getByRole("button", { name: "Save changes", exact: true })
+        .click();
+      await expect(
+        page.getByRole("heading", { name: editedTitle, exact: true }),
+      ).toBeVisible();
+      await page
+        .getByLabel("Reply", { exact: true })
+        .fill("Here is a first visual direction.");
+      await page
+        .getByLabel("Attach files to reply", { exact: true })
+        .setInputFiles(imageFile("direction.png"));
       await expect(
         page.getByText("direction.png", { exact: true }),
       ).toBeVisible();
@@ -137,7 +176,7 @@ test(
       await page.getByRole("button", { name: "Board", exact: true }).click();
       await expect(page.locator(".board-card")).toHaveCount(1);
       await page
-        .getByLabel("Status of Design an approachable onboarding flow")
+        .getByLabel(`Status of ${editedTitle}`)
         .selectOption({ label: "In progress" });
       await expect(
         page
@@ -227,6 +266,49 @@ test(
         path: "test-results/thread-mobile.png",
         fullPage: true,
       });
+      await page
+        .getByRole("button", { name: "Close thread", exact: true })
+        .click();
+      await page.setViewportSize({ width: 1440, height: 1000 });
+      await page.getByRole("button", { name: "Board", exact: true }).click();
+      await page
+        .getByRole("button", { name: "New thread", exact: true })
+        .click();
+      const createDialog = page.getByRole("dialog");
+      await createDialog
+        .locator("input[type=file]")
+        .setInputFiles(imageFile("attachment-only.png"));
+      await expect(
+        createDialog.getByText("attachment-only.png", { exact: true }),
+      ).toBeVisible();
+      await createDialog
+        .getByRole("button", { name: "Send", exact: true })
+        .click();
+      await expect(
+        page
+          .getByRole("dialog", { name: "Thread details" })
+          .getByRole("heading", { name: "attachment-only.png", exact: true }),
+      ).toBeVisible();
+      await expect(page.locator(".thread-description img")).toBeVisible();
+      await page
+        .getByRole("button", { name: "Close thread", exact: true })
+        .click();
+      await page.getByRole("button", { name: "Threads", exact: true }).click();
+      const message = page.getByLabel("Message", { exact: true });
+      await message.fill("Keyboard conversation");
+      await message.press("Shift+Enter");
+      await message.pressSequentially("Second line stays in the same message.");
+      await expect(message).toHaveValue(
+        "Keyboard conversation\nSecond line stays in the same message.",
+      );
+      await message.press("Enter");
+      await expect(
+        page
+          .locator(".thread-row")
+          .filter({ hasText: "Keyboard conversation" }),
+      ).toBeVisible();
+      await expect(message).toHaveValue("");
+      await expect(message).toBeFocused();
       assert.deepEqual(errors, [], "no browser runtime errors");
     } catch (error) {
       await page.screenshot({

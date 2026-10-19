@@ -88,6 +88,27 @@ test("real MCP transport performs board actions, uploads, downloads and enforces
       path: "..valid-notes.txt",
     });
     assert.ok(dotFile.id);
+    const opening = await tool("create_thread", {
+      channel_id: 1,
+      body: "A message with opening attachments",
+      attachment_ids: [dotFile.id],
+    });
+    assert.equal(opening.title, "A message with opening attachments");
+    const openingDetail = await tool("read_thread", { thread_id: opening.id });
+    assert.equal(openingDetail.attachments[0].id, dotFile.id);
+    assert.equal(openingDetail.replies.length, 0);
+    writeFileSync(join(dir, "diagram.txt"), "An opening artifact");
+    const fileOnly = await tool("upload_attachment", { path: "diagram.txt" });
+    const fileThread = await tool("create_thread", {
+      channel_id: 1,
+      attachment_ids: [fileOnly.id],
+    });
+    assert.equal(fileThread.title, "diagram.txt");
+    const empty = await client.callTool({
+      name: "create_thread",
+      arguments: { channel_id: 1 },
+    });
+    assert.equal(empty.isError, true);
     const notImage = await client.callTool({
       name: "view_image_attachment",
       arguments: { attachment_id: a.id },

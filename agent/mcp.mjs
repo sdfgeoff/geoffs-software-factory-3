@@ -73,11 +73,12 @@ tool(
 );
 tool(
   "create_thread",
-  "Create a work item. This explicitly posts to the board. Use @username mentions. You are automatically subscribed.",
+  "Create a work item. This explicitly posts to the board. Title is optional and generated from body or attachment filename. Upload files first and pass attachment_ids. Use @username mentions. You are automatically subscribed.",
   {
     channel_id: id,
-    title: z.string().min(1).max(240),
+    title: z.string().max(240).optional(),
     body: z.string().optional(),
+    attachment_ids: z.array(z.string().uuid()).max(10).optional(),
     status_id: id.optional(),
     assignee_id: id.optional(),
   },

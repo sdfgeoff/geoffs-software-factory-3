@@ -22,6 +22,25 @@ const username = z
   );
 const text = z.string().max(50000);
 const positive = z.coerce.number().int().positive();
+const attachmentIds = z.array(z.string().uuid()).max(10).default([]);
+const openingTitle = (body, attachments) => {
+  const line = body
+    .split(/\r?\n/)
+    .map((line) =>
+      line
+        .replace(/!?(?:\[([^\]]*)\])\([^)]+\)/g, "$1")
+        .replace(/^\s*(?:#{1,6}\s+|>\s*|[-*+]\s+|\d+[.)]\s+)/, "")
+        .replace(/[*_`~]/g, "")
+        .replace(/\s+/g, " ")
+        .trim(),
+    )
+    .find(Boolean);
+  const title = line || attachments[0]?.name || "Attachment";
+  if (title.length <= 80) return title;
+  const prefix = title.slice(0, 79);
+  const boundary = prefix.lastIndexOf(" ");
+  return (boundary > 50 ? prefix.slice(0, boundary) : prefix).trimEnd() + "…";
+};
 const safeUser = (u) => ({
   id: u.id,
   username: u.username,
@@ -425,6 +444,9 @@ export function createApp({
       .map((e) => ({ ...e, payload: JSON.parse(e.payload) }));
     res.json({
       ...db.prepare(threadQuery + " WHERE t.id=?").get(t.id),
+      attachments: db
+        .prepare("SELECT * FROM attachments WHERE thread_id=?")
+        .all(t.id),
       replies,
       activity,
       subscribed: !!db
@@ -439,12 +461,25 @@ export function createApp({
       const input = z
         .object({
           channel_id: positive,
-          title: z.string().trim().min(1).max(240),
+          title: z.string().trim().max(240).optional(),
           body: text.default(""),
+          attachment_ids: attachmentIds,
           status_id: positive.optional(),
           assignee_id: positive.nullable().optional(),
         })
         .parse(req.body);
+      if (!input.title && !input.body.trim() && !input.attachment_ids.length)
+        fail(400, "Write a message or add an attachment");
+      const attachments = input.attachment_ids.map(
+        (id) =>
+          db
+            .prepare(
+              "SELECT * FROM attachments WHERE id=? AND owner_id=? AND reply_id IS NULL AND thread_id IS NULL",
+            )
+            .get(id, req.user.id) ||
+          fail(400, "Attachment unavailable or belongs to someone else"),
+      );
+      const title = input.title || openingTitle(input.body, attachments);
       const channel = getChannel(input.channel_id);
       if (channel.archived)
         fail(400, "Reopen this channel before creating threads");
@@ -459,7 +494,7 @@ export function createApp({
         )
         .get(
           input.channel_id,
-          input.title,
+          title,
           input.body,
           status,
           input.assignee_id || null,
@@ -467,7 +502,12 @@ export function createApp({
           stamp,
           stamp,
         );
-      const mentioned = mentions(input.title + " " + input.body);
+      for (const attachment of attachments)
+        db.prepare("UPDATE attachments SET thread_id=? WHERE id=?").run(
+          t.id,
+          attachment.id,
+        );
+      const mentioned = mentions(title + " " + input.body);
       for (const id of [
         req.user.id,
         ...mentioned,
@@ -478,7 +518,12 @@ export function createApp({
         "thread.created",
         req.user.id,
         t,
-        { title: t.title, body: t.body, assignee_id: t.assignee_id },
+        {
+          title: t.title,
+          body: t.body,
+          assignee_id: t.assignee_id,
+          attachment_ids: input.attachment_ids,
+        },
         mentioned,
       );
       return t;
@@ -551,7 +596,7 @@ export function createApp({
       const input = z
         .object({
           body: text.default(""),
-          attachment_ids: z.array(z.string().uuid()).max(10).default([]),
+          attachment_ids: attachmentIds,
         })
         .parse(req.body);
       if (!input.body.trim() && !input.attachment_ids.length)
@@ -560,7 +605,7 @@ export function createApp({
         if (
           !db
             .prepare(
-              "SELECT 1 FROM attachments WHERE id=? AND owner_id=? AND reply_id IS NULL",
+              "SELECT 1 FROM attachments WHERE id=? AND owner_id=? AND reply_id IS NULL AND thread_id IS NULL",
             )
             .get(id, req.user.id)
         )
@@ -670,7 +715,7 @@ export function createApp({
     const a =
       db.prepare("SELECT * FROM attachments WHERE id=?").get(req.params.id) ||
       fail(404, "Attachment not found");
-    if (!a.reply_id && a.owner_id !== req.user.id)
+    if (!a.reply_id && !a.thread_id && a.owner_id !== req.user.id)
       fail(403, "Attachment has not been posted");
     res.setHeader("Content-Type", a.mime);
     res.setHeader(
@@ -684,7 +729,7 @@ export function createApp({
     const a =
       db
         .prepare(
-          "SELECT * FROM attachments WHERE id=? AND owner_id=? AND reply_id IS NULL",
+          "SELECT * FROM attachments WHERE id=? AND owner_id=? AND reply_id IS NULL AND thread_id IS NULL",
         )
         .get(req.params.id, req.user.id) ||
       fail(404, "Unposted attachment not found");

@@ -32,8 +32,22 @@ export function openDatabase(path) {
     CREATE TABLE IF NOT EXISTS agents (user_id INTEGER PRIMARY KEY REFERENCES users(id), role TEXT NOT NULL, model TEXT NOT NULL DEFAULT '', desired TEXT NOT NULL DEFAULT 'running', state TEXT NOT NULL DEFAULT 'offline', session_id TEXT, heartbeat_at TEXT, instance_id TEXT, error TEXT, auth_status TEXT NOT NULL DEFAULT 'unknown', login_url TEXT, login_code TEXT, login_requested INTEGER NOT NULL DEFAULT 0, stop_version INTEGER NOT NULL DEFAULT 0);
     CREATE TABLE IF NOT EXISTS agent_logs (id INTEGER PRIMARY KEY, agent_id INTEGER NOT NULL REFERENCES agents(user_id), level TEXT NOT NULL, message TEXT NOT NULL, created_at TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS mutations (user_id INTEGER NOT NULL REFERENCES users(id), key TEXT NOT NULL, response TEXT NOT NULL, PRIMARY KEY(user_id,key));
-    PRAGMA user_version=1;
+
   `);
+  // SQLite can add this nullable foreign key without rewriting existing replies.
+  transaction(db, () => {
+    if (
+      !db
+        .prepare("PRAGMA table_info(attachments)")
+        .all()
+        .some((c) => c.name === "thread_id")
+    )
+      db.exec(
+        "ALTER TABLE attachments ADD COLUMN thread_id INTEGER REFERENCES threads(id)",
+      );
+    if (db.prepare("PRAGMA user_version").get().user_version < 2)
+      db.exec("PRAGMA user_version=2");
+  });
   if (!db.prepare("SELECT 1 FROM statuses").get()) {
     for (const [i, name, color] of [
       [0, "Backlog", "#94a3b8"],

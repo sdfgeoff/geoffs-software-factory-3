@@ -462,6 +462,10 @@ function App() {
     setStatusFilter("");
     setMobile(false);
   }
+  function startThread() {
+    if (view === "board") setModal({ type: "thread" });
+    else document.getElementById("new-thread-message")?.focus();
+  }
   function openThread(id) {
     setSelectedId(id);
     setDetail(null);
@@ -726,7 +730,7 @@ function App() {
                 <button
                   className="button primary"
                   disabled={!!channel?.archived}
-                  onClick={() => setModal({ type: "thread" })}
+                  onClick={startThread}
                 >
                   <Plus size={17} />
                   New thread
@@ -799,6 +803,25 @@ function App() {
                 )}
               </div>
             </section>
+            {view === "threads" && !channel?.archived && (
+              <ReplyComposer
+                creation
+                key={channelId || "all"}
+                data={data}
+                channelId={channelId}
+                users={data.users}
+                act={act}
+                notify={notify}
+                afterPost={() => {
+                  setQuery("");
+                  setSearch("");
+                  setAssignee("");
+                  setStatusFilter("");
+                  notify("Message sent");
+                }}
+                textareaId="new-thread-message"
+              />
+            )}
             <div className="work-meta">
               <span>
                 {view === "threads"
@@ -832,7 +855,7 @@ function App() {
                     <button
                       className="button primary"
                       disabled={!!channel?.archived}
-                      onClick={() => setModal({ type: "thread" })}
+                      onClick={startThread}
                     >
                       <Plus size={16} />
                       Start a conversation
@@ -1546,7 +1569,10 @@ function ThreadDetail({ thread: t, data, act, notify, close, edit }) {
       <div className="thread-scroll">
         <div className="thread-description">
           <RichText>{t.body}</RichText>
-          {!t.body && <p className="muted">No description yet.</p>}
+          <Attachments files={t.attachments} />
+          {!t.body && !t.attachments?.length && (
+            <p className="muted">No description yet.</p>
+          )}
         </div>
         <div className="discussion-tabs">
           <button
@@ -1715,49 +1741,113 @@ function Attachments({ files }) {
     )
   );
 }
-function ReplyComposer({ thread, users, act, notify, afterPost }) {
+function ReplyComposer({
+  thread,
+  users,
+  act,
+  notify,
+  afterPost,
+  creation = false,
+  data,
+  channelId,
+  status,
+  textareaId,
+}) {
   const [body, setBody] = useState(""),
     [files, setFiles] = useState([]),
     [busy, setBusy] = useState(false),
     [uploading, setUploading] = useState(false),
     [drag, setDrag] = useState(false),
-    [mention, setMention] = useState(null);
+    [mention, setMention] = useState(null),
+    [error, setError] = useState(""),
+    [destination, setDestination] = useState(
+      channelId || data?.channels.find((c) => !c.archived)?.id || "",
+    ),
+    [title, setTitle] = useState(""),
+    [statusId, setStatusId] = useState(status || data?.statuses[0]?.id || ""),
+    [assigneeId, setAssigneeId] = useState("");
   const input = useRef(),
-    textarea = useRef();
-  async function upload(selected) {
-    if (!selected?.length) return;
-    setUploading(true);
-    try {
-      const all = [];
-      for (const f of [...selected]) {
-        if (files.length + all.length >= 10)
-          throw new Error("Up to 10 attachments per reply");
-        const form = new FormData();
-        form.set("file", f);
-        all.push(await api("/attachments", { method: "POST", body: form }));
-        setFiles((existing) => [...existing, all.at(-1)]);
-      }
-    } catch (e) {
-      notify(e.message, true);
-    } finally {
-      setUploading(false);
+    textarea = useRef(),
+    uploadQueue = useRef(Promise.resolve()),
+    uploadJobs = useRef(0),
+    attachmentCount = useRef(0),
+    sending = useRef(false),
+    focusAfterSend = useRef(false);
+  useEffect(() => {
+    if (!busy && focusAfterSend.current) {
+      focusAfterSend.current = false;
+      textarea.current?.focus();
     }
+  }, [busy]);
+  function upload(selected) {
+    if (!selected?.length || sending.current) return;
+    const selectedFiles = [...selected];
+    uploadJobs.current += 1;
+    setUploading(true);
+    setError("");
+    uploadQueue.current = uploadQueue.current.then(async () => {
+      try {
+        for (const f of selectedFiles) {
+          if (attachmentCount.current >= 10)
+            throw new Error("Up to 10 attachments per message");
+          const form = new FormData();
+          form.set("file", f);
+          const attachment = await api("/attachments", {
+            method: "POST",
+            body: form,
+          });
+          attachmentCount.current += 1;
+          setFiles((existing) => [...existing, attachment]);
+        }
+      } catch (e) {
+        setError(e.message);
+        notify(e.message, true);
+      } finally {
+        uploadJobs.current -= 1;
+        setUploading(uploadJobs.current > 0);
+      }
+    });
   }
   async function send(e) {
     e?.preventDefault();
-    if (busy || uploading || (!body.trim() && !files.length)) return;
+    if (
+      sending.current ||
+      uploadJobs.current ||
+      (!body.trim() && !files.length && !(creation && title.trim()))
+    )
+      return;
+    if (creation && !destination) return;
+    sending.current = true;
     setBusy(true);
+    setError("");
     try {
-      await act(`/threads/${thread.id}/replies`, "POST", {
-        body,
-        attachment_ids: files.map((f) => f.id),
-      });
+      const result = await act(
+        creation ? "/threads" : `/threads/${thread.id}/replies`,
+        "POST",
+        {
+          body,
+          attachment_ids: files.map((f) => f.id),
+          ...(creation
+            ? {
+                channel_id: Number(destination),
+                ...(title.trim() ? { title: title.trim() } : {}),
+                status_id: Number(statusId),
+                assignee_id: assigneeId ? Number(assigneeId) : null,
+              }
+            : {}),
+        },
+      );
       setBody("");
+      setMention(null);
       setFiles([]);
-      afterPost();
-      textarea.current?.focus();
-    } catch {
+      attachmentCount.current = 0;
+      setTitle("");
+      focusAfterSend.current = true;
+      afterPost(result);
+    } catch (e) {
+      setError(e.message);
     } finally {
+      sending.current = false;
       setBusy(false);
     }
   }
@@ -1768,9 +1858,20 @@ function ReplyComposer({ thread, users, act, notify, afterPost }) {
         )
         .slice(0, 6)
     : [];
+  function chooseMention(user) {
+    const value =
+      body.slice(0, mention.start) +
+      "@" +
+      user.username +
+      " " +
+      body.slice(mention.end);
+    setBody(value);
+    setMention(null);
+    textarea.current.focus();
+  }
   return (
     <form
-      className={`reply-composer ${drag ? "dragging" : ""}`}
+      className={`reply-composer ${creation ? "new-message-composer" : ""} ${drag ? "dragging" : ""}`}
       onSubmit={send}
       onDragOver={(e) => {
         e.preventDefault();
@@ -1783,11 +1884,45 @@ function ReplyComposer({ thread, users, act, notify, afterPost }) {
         upload(e.dataTransfer.files);
       }}
     >
+      {creation && (
+        <div className="new-message-heading">
+          <strong>Start a conversation</strong>
+          {channelId ? (
+            <span>#{data.channels.find((c) => c.id === channelId)?.name}</span>
+          ) : (
+            <label>
+              Post in
+              <select
+                aria-label="Channel"
+                value={destination}
+                onChange={(e) => setDestination(e.target.value)}
+                disabled={busy}
+              >
+                {!destination && <option value="">Choose a channel</option>}
+                {data.channels
+                  .filter((c) => !c.archived)
+                  .map((c) => (
+                    <option key={c.id} value={c.id}>
+                      #{c.name}
+                    </option>
+                  ))}
+              </select>
+            </label>
+          )}
+        </div>
+      )}
       <div className="composer-box">
         <textarea
           ref={textarea}
-          aria-label="Reply"
-          placeholder="Add to the conversation… use @ to mention"
+          id={textareaId}
+          aria-label={creation ? "Message" : "Reply"}
+          placeholder={
+            creation
+              ? "Write a message… use @ to mention"
+              : "Add to the conversation… use @ to mention"
+          }
+          maxLength={50000}
+          disabled={busy}
           value={body}
           onChange={(e) => {
             setBody(e.target.value);
@@ -1804,8 +1939,16 @@ function ReplyComposer({ thread, users, act, notify, afterPost }) {
             );
           }}
           onKeyDown={(e) => {
-            if ((e.metaKey || e.ctrlKey) && e.key === "Enter") send(e);
+            if (e.nativeEvent.isComposing || e.nativeEvent.keyCode === 229)
+              return;
             if (e.key === "Escape") setMention(null);
+            if (e.key !== "Enter") return;
+            if (creation && !e.shiftKey && matches.length) {
+              e.preventDefault();
+              chooseMention(matches[0]);
+              return;
+            }
+            if (e.metaKey || e.ctrlKey || (creation && !e.shiftKey)) send(e);
           }}
           onPaste={(e) => {
             const images = [...e.clipboardData.files];
@@ -1818,21 +1961,7 @@ function ReplyComposer({ thread, users, act, notify, afterPost }) {
         {matches.length > 0 && (
           <div className="mention-menu">
             {matches.map((u) => (
-              <button
-                key={u.id}
-                type="button"
-                onClick={() => {
-                  const value =
-                    body.slice(0, mention.start) +
-                    "@" +
-                    u.username +
-                    " " +
-                    body.slice(mention.end);
-                  setBody(value);
-                  setMention(null);
-                  textarea.current.focus();
-                }}
-              >
+              <button key={u.id} type="button" onClick={() => chooseMention(u)}>
                 <Avatar user={u} size="small" />
                 <strong>{u.name}</strong>
                 <span>@{u.username}</span>
@@ -1844,15 +1973,27 @@ function ReplyComposer({ thread, users, act, notify, afterPost }) {
           <div className="pending-files">
             {files.map((f) => (
               <div key={f.id}>
-                <Paperclip size={13} />
+                {f.mime?.startsWith("image/") ? (
+                  <img
+                    className="pending-preview"
+                    src={`/api/attachments/${f.id}`}
+                    alt={f.name}
+                  />
+                ) : (
+                  <Paperclip size={13} />
+                )}
                 <span>{f.name}</span>
                 <button
                   type="button"
                   aria-label={`Remove ${f.name}`}
+                  disabled={busy || uploading}
                   onClick={async () => {
                     try {
                       await api(`/attachments/${f.id}`, { method: "DELETE" });
-                      setFiles(files.filter((a) => a.id !== f.id));
+                      attachmentCount.current -= 1;
+                      setFiles((existing) =>
+                        existing.filter((a) => a.id !== f.id),
+                      );
                     } catch (e) {
                       notify(e.message, true);
                     }
@@ -1870,6 +2011,9 @@ function ReplyComposer({ thread, users, act, notify, afterPost }) {
               ref={input}
               type="file"
               multiple
+              aria-label={
+                creation ? "Attach files to message" : "Attach files to reply"
+              }
               hidden
               onChange={(e) => {
                 upload(e.target.files);
@@ -1881,7 +2025,7 @@ function ReplyComposer({ thread, users, act, notify, afterPost }) {
               className="icon-button"
               aria-label="Attach files"
               title="Attach files · up to 20 MB each"
-              disabled={uploading}
+              disabled={uploading || busy}
               onClick={() => input.current.click()}
             >
               {uploading ? (
@@ -1894,24 +2038,88 @@ function ReplyComposer({ thread, users, act, notify, afterPost }) {
           </div>
           <button
             className="button primary"
-            disabled={busy || uploading || (!body.trim() && !files.length)}
+            disabled={
+              busy ||
+              uploading ||
+              (creation && !destination) ||
+              (!body.trim() && !files.length && !(creation && title.trim()))
+            }
           >
             {busy ? (
               <LoaderCircle className="spin" size={15} />
             ) : (
               <Send size={15} />
             )}
-            Reply
+            {creation ? "Send" : "Reply"}
           </button>
         </div>
       </div>
+      {error && (
+        <p className="composer-error" role="alert">
+          {error}
+        </p>
+      )}
+      {creation && (
+        <details className="composer-options">
+          <summary>Thread options</summary>
+          <div className="composer-option-fields">
+            <label>
+              Title (optional)
+              <input
+                aria-label="Title (optional)"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                maxLength={240}
+                placeholder="Generated from your message"
+                disabled={busy}
+              />
+            </label>
+            <label>
+              Status
+              <select
+                aria-label="Status"
+                value={statusId}
+                onChange={(e) => setStatusId(e.target.value)}
+                disabled={busy}
+              >
+                {data.statuses.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Assignee
+              <select
+                aria-label="Assignee"
+                value={assigneeId}
+                onChange={(e) => setAssigneeId(e.target.value)}
+                disabled={busy}
+              >
+                <option value="">Unassigned</option>
+                {users.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.name}
+                    {u.kind === "agent" ? " · AI" : ""}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+        </details>
+      )}
       <div className="composer-footer">
         <span>
           {drag
             ? "Drop files to attach"
             : "Everyone in the workspace can see this thread."}
         </span>
-        <span>⌘ / Ctrl + Enter</span>
+        <span>
+          {creation
+            ? "Enter to send · Shift + Enter for a new line"
+            : "⌘ / Ctrl + Enter"}
+        </span>
       </div>
     </form>
   );
@@ -2079,6 +2287,30 @@ function ModalRouter({
   }
   if (modal.type === "thread") {
     const t = modal.thread;
+    if (!t)
+      return (
+        <Dialog
+          title="Start a conversation."
+          subtitle="Write a message. Its title is generated automatically."
+          onClose={close}
+          wide
+        >
+          <ReplyComposer
+            creation
+            data={data}
+            channelId={channelId}
+            status={modal.status}
+            users={data.users}
+            act={act}
+            notify={notify}
+            afterPost={(r) => {
+              close();
+              openThread(r.id);
+              notify("Message sent");
+            }}
+          />
+        </Dialog>
+      );
     return (
       <Dialog
         title={t ? "Edit thread" : "Start a conversation."}
@@ -2152,8 +2384,7 @@ function ModalRouter({
                 maxLength={50000}
               />
               <small id="thread-description-help">
-                Markdown supported. Add attachments to replies after creating
-                the thread.
+                Markdown supported. Use @username to mention a teammate.
               </small>
             </label>
             <div className="form-row">
