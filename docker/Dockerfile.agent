@@ -1,0 +1,11 @@
+FROM node:24-bookworm-slim
+RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates python3 curl && rm -rf /var/lib/apt/lists/*
+RUN npm install -g @openai/codex@0.162.1
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci --omit=dev
+COPY agent ./agent
+RUN mkdir -p /state/workspace /state/codex && chown -R node:node /state
+USER node
+ENV NODE_ENV=production AGENT_DATA_DIR=/state AGENT_WORKSPACE=/state/workspace CODEX_HOME=/state/codex
+CMD ["node", "agent/worker.mjs"]

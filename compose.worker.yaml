@@ -1,0 +1,24 @@
+# Run on a separate machine with an .env containing THREADWORK_URL and AGENT_TOKEN.
+name: threadwork-worker
+services:
+  agent:
+    image: threadwork-agent:local
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.agent
+    init: true
+    restart: unless-stopped
+    read_only: true
+    tmpfs: [/tmp:mode=1777]
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    pids_limit: 256
+    environment:
+      THREADWORK_URL: ${THREADWORK_URL:?Set your server URL}
+      AGENT_TOKEN: ${AGENT_TOKEN:?Set this agent's server token}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+    volumes:
+      - agent-data:/state
+volumes:
+  agent-data:
+    name: threadwork_${AGENT_VOLUME:-remote-agent}
