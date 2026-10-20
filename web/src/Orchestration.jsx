@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { GitBranch, RefreshCw, Plus } from "lucide-react";
+import { QueueAction, useWorkQueue } from "./WorkQueue.jsx";
 
 function useOrchestration(api, refreshKey) {
   const [state, setState] = useState(null);
@@ -329,15 +330,24 @@ function CapabilityRow({ user, value, api, refresh }) {
   );
 }
 
-export function ThreadBranches({ api, data, threadId, refreshKey }) {
+export function ThreadBranches({
+  api,
+  data,
+  threadId,
+  refreshKey,
+  initialBranchId,
+}) {
   const { state, error, refresh } = useOrchestration(api, refreshKey);
   const [branches, setBranches] = useState([]);
-  const [selected, setSelected] = useState("");
+  const [selected, setSelected] = useState(
+    initialBranchId ? String(initialBranchId) : "",
+  );
   const [detail, setDetail] = useState(null);
   const [inspection, setInspection] = useState(null);
   const [detailError, setDetailError] = useState("");
   const [creating, setCreating] = useState(false);
   const [repoId, setRepoId] = useState("");
+  const { queue, refresh: refreshQueue } = useWorkQueue(api, state);
   useEffect(() => {
     let stale = false;
     api(`/branches?thread_id=${threadId}`)
@@ -380,6 +390,7 @@ export function ThreadBranches({ api, data, threadId, refreshKey }) {
   );
   const finished = () => {
     refresh();
+    refreshQueue();
   };
   return (
     <section className="thread-branches">
@@ -516,6 +527,66 @@ export function ThreadBranches({ api, data, threadId, refreshKey }) {
             Main branch: {repository?.main_branch || "main"}
             {repository?.require_human ? " · Human approval required" : ""}
           </p>
+          {detail.state === "active" &&
+            detail.owner_id === data.user.id &&
+            canWork && (
+              <QueueAction
+                api={api}
+                path={`/branches/${detail.id}/submit-review`}
+                body={{ commit: detail.head_commit }}
+                label={
+                  detail.submitted_commit === detail.head_commit
+                    ? "Resubmit current commit for review"
+                    : "Submit branch for review"
+                }
+                onDone={finished}
+              >
+                <p className="muted">
+                  Submission notifies subscribed reviewers and frees your active
+                  work capacity. Approval does not merge the branch.
+                </p>
+              </QueueAction>
+            )}
+          {detail.submitted_commit && (
+            <p className="muted">
+              Submitted revision:{" "}
+              <code>{detail.submitted_commit.slice(0, 12)}</code>
+              {detail.submitted_commit !== detail.head_commit
+                ? " · Branch has newer commits; submit again for review."
+                : ""}
+            </p>
+          )}
+          {detail.review_claim_user_id ? (
+            <p className="muted">
+              Review claimed by{" "}
+              {data.users.find((u) => u.id === detail.review_claim_user_id)
+                ?.name || "another reviewer"}
+              .
+            </p>
+          ) : null}
+          {detail.state === "active" &&
+            detail.submitted_commit === detail.head_commit &&
+            canReview &&
+            detail.owner_id !== data.user.id &&
+            !detail.review_claim_user_id && (
+              <QueueAction
+                api={api}
+                path={`/branches/${detail.id}/claim-review`}
+                body={{ commit: detail.head_commit }}
+                label="Claim branch review"
+                disabled={!!queue?.active_claim}
+                onDone={finished}
+              />
+            )}
+          {detail.review_claim_user_id === data.user.id && (
+            <QueueAction
+              api={api}
+              path={`/branches/${detail.id}/release-review`}
+              body={{ commit: detail.head_commit }}
+              label="Release branch review"
+              onDone={finished}
+            />
+          )}
           <BranchDiff
             key={`${detail.id}:${detail.head_commit}`}
             api={api}
@@ -557,8 +628,10 @@ export function ThreadBranches({ api, data, threadId, refreshKey }) {
                 path={`/branches/${detail.id}/reviews`}
                 label="Record review"
                 disabled={
-                  inspection?.branch_id === detail.id &&
-                  inspection.commit !== detail.head_commit
+                  (detail.review_claim_user_id &&
+                    detail.review_claim_user_id !== data.user.id) ||
+                  (inspection?.branch_id === detail.id &&
+                    inspection.commit !== detail.head_commit)
                 }
                 body={(f) => ({
                   commit: detail.head_commit,

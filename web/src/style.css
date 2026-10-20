@@ -3463,3 +3463,116 @@ code {
   border-radius: 5px;
   padding: 10px;
 }
+
+.work-preferences h3 {
+  font-size: 14px;
+  margin: 0 0 10px;
+}
+.work-preferences p {
+  font-size: 12px;
+  line-height: 1.7;
+}
+.work-preferences form {
+  display: grid;
+  gap: 14px;
+  margin-top: 15px;
+}
+.work-preferences form .button {
+  justify-self: start;
+}
+.queue-action {
+  display: grid;
+  gap: 10px;
+  margin: 12px 0;
+  min-width: 0;
+}
+.queue-action .button {
+  justify-self: start;
+}
+.queue-action label {
+  font-size: 12px;
+}
+.queue-action textarea {
+  min-height: 85px;
+}
+.queue-available {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 13px;
+}
+.queue-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  border-top: 1px solid var(--line);
+  padding: 15px 0;
+  min-width: 0;
+}
+.queue-item:first-of-type {
+  border-top: 0;
+}
+.queue-item > div {
+  min-width: 0;
+}
+.queue-link {
+  text-align: left;
+  overflow-wrap: anywhere;
+  font-size: 13px;
+  font-weight: 600;
+}
+.queue-link:hover {
+  text-decoration: underline;
+}
+.queue-item p {
+  margin: 5px 0;
+}
+.queue-summary {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.thread-work-control {
+  padding: 18px;
+  margin-bottom: 20px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f6f8f1;
+}
+.thread-work-control > div > strong {
+  font-size: 13px;
+}
+.thread-work-control p {
+  font-size: 12px;
+  line-height: 1.6;
+}
+.ticket-submission h4 {
+  font-size: 12px;
+  margin: 15px 0 8px;
+}
+@media (max-width: 600px) {
+  .queue-item {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 4px;
+  }
+}
+.work-queue-content {
+  width: 100%;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr);
+}
+.work-preferences form {
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr);
+}
+.work-preferences .checkbox-label {
+  min-width: 0;
+  line-height: 1.6;
+}
+.work-preferences .checkbox-label input {
+  flex-shrink: 0;
+}
+.queue-available {
+  min-width: 0;
+}

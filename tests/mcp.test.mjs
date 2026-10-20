@@ -9,6 +9,7 @@ import {
   writeFileSync,
   readFileSync,
   symlinkSync,
+  mkdirSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -22,6 +23,7 @@ test("real MCP transport performs board actions, uploads, downloads and enforces
     env: {
       ADMIN_PASSWORD: "mcp-test-password",
       AGENT_SPARK_TOKEN: "mcp-token",
+      AGENT_SAGE_TOKEN: "mcp-sage-token",
     },
   });
   const server = app.listen(0, "127.0.0.1");
@@ -39,12 +41,20 @@ test("real MCP transport performs board actions, uploads, downloads and enforces
     stderr: "pipe",
   });
   const client = new Client({ name: "test", version: "1.0.0" });
+  let reviewerClient;
   try {
     await client.connect(transport);
     const tools = await client.listTools();
     assert.ok(tools.tools.length >= 20);
     for (const name of [
       "search_platform",
+      "work_queue",
+      "claim_ticket",
+      "submit_ticket_work",
+      "claim_ticket_review",
+      "review_ticket",
+      "submit_branch_review",
+      "claim_branch_review",
       "orchestration_overview",
       "create_branch",
       "review_branch",
@@ -283,7 +293,116 @@ test("real MCP transport performs board actions, uploads, downloads and enforces
       status_id: 5,
     });
     assert.equal(change.status_id, 5);
+    // Exercise the complete voluntary pickup/review flow over real MCP transports.
+    const reviewerWorkspace = join(dir, "reviewer");
+    mkdirSync(reviewerWorkspace);
+    reviewerClient = new Client({ name: "reviewer-test", version: "1.0.0" });
+    await reviewerClient.connect(
+      new StdioClientTransport({
+        command: process.execPath,
+        args: [resolve("agent/mcp.mjs")],
+        env: {
+          ...process.env,
+          AGENT_TOKEN: "mcp-sage-token",
+          WORKER_INSTANCE: "",
+          THREADWORK_URL: baseUrl,
+          AGENT_WORKSPACE: reviewerWorkspace,
+        },
+        stderr: "pipe",
+      }),
+    );
+    const reviewerTool = async (name, args = {}) => {
+      const r = await reviewerClient.callTool({ name, arguments: args });
+      assert.ok(!r.isError, JSON.stringify(r));
+      return JSON.parse(r.content[0].text);
+    };
+    const sage = overview.users.find((u) => u.username === "sage");
+    const permission = await fetch(
+      baseUrl + `/api/users/${sage.id}/capabilities`,
+      {
+        method: "POST",
+        headers: { Cookie: cookie, "Content-Type": "application/json" },
+        body: JSON.stringify({ can_work: true, can_review: true }),
+      },
+    );
+    assert.equal(permission.status, 200);
+    await tool("set_work_notifications", {
+      notify_ready_work: true,
+      notify_ready_reviews: false,
+    });
+    await reviewerTool("set_work_notifications", {
+      notify_ready_work: false,
+      notify_ready_reviews: true,
+    });
+    const ready = overview.statuses.find((s) => s.name === "Ready"),
+      doneStatus = overview.statuses.find((s) => s.name === "Done");
+    const noncode = await tool("create_thread", {
+      channel_id: 1,
+      body: "Write follow-up tickets",
+      status_id: ready.id,
+    });
+    assert.ok((await tool("work_queue")).work.some((t) => t.id === noncode.id));
+    await tool("claim_ticket", { thread_id: noncode.id });
+    const stolen = await reviewerClient.callTool({
+      name: "claim_ticket",
+      arguments: { thread_id: noncode.id },
+    });
+    assert.equal(stolen.isError, true);
+    const submitted = await tool("submit_ticket_work", {
+      thread_id: noncode.id,
+      summary:
+        "Created linked follow-up tickets and documented acceptance criteria.",
+    });
+    const pending = (await reviewerTool("work_queue")).reviews.find(
+      (r) => r.kind === "ticket" && r.thread_id === noncode.id,
+    );
+    assert.ok(pending);
+    await reviewerTool("claim_ticket_review", {
+      thread_id: noncode.id,
+      submission_id: pending.submission_id,
+    });
+    await reviewerTool("review_ticket", {
+      thread_id: noncode.id,
+      submission_id: pending.submission_id,
+      decision: "approved",
+      body: "Checked the follow-up scope.",
+    });
+    assert.equal(
+      (await tool("read_thread", { thread_id: noncode.id })).status_id,
+      doneStatus.id,
+    );
+    const coding = await tool("create_thread", {
+      channel_id: 1,
+      body: "Implement queued code",
+      status_id: ready.id,
+    });
+    await tool("claim_ticket", { thread_id: coding.id });
+    await tool("link_branch", { branch_id: managed.id, thread_id: coding.id });
+    await tool("submit_branch_review", {
+      branch_id: managed.id,
+      commit: diff.commit,
+    });
+    assert.equal((await tool("work_queue")).active_claim, null);
+    const branchJob = (await reviewerTool("work_queue")).reviews.find(
+      (r) => r.kind === "branch" && r.id === managed.id,
+    );
+    assert.ok(branchJob);
+    await reviewerTool("claim_branch_review", {
+      branch_id: managed.id,
+      commit: diff.commit,
+    });
+    await reviewerTool("review_branch", {
+      branch_id: managed.id,
+      commit: diff.commit,
+      decision: "approved",
+      body: "Verified queued implementation.",
+    });
+    const merged = await tool("request_branch_merge", {
+      branch_id: managed.id,
+    });
+    assert.equal(merged.state, "merged");
   } finally {
+    await reviewerClient?.close();
     await client.close();
     await new Promise((r) => server.close(r));
     app.locals.shutdown();

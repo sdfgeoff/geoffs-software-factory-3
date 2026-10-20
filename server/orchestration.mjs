@@ -50,6 +50,7 @@ export function gitIdentity(db, authorization) {
 export function installOrchestration({
   app,
   db,
+  workQueue,
   dataDir,
   env,
   admin,
@@ -104,6 +105,7 @@ export function installOrchestration({
     const b = branch(value);
     return {
       ...b,
+      ...workQueue.branchState(b.id),
       thread_ids: db
         .prepare("SELECT thread_id FROM branch_threads WHERE branch_id=?")
         .all(b.id)
@@ -199,6 +201,7 @@ export function installOrchestration({
           db.prepare(
             "INSERT OR IGNORE INTO branch_contributors VALUES(?,?)",
           ).run(b.id, actor || b.owner_id);
+          workQueue.branchChanged(b, actor || b.owner_id);
           notify(b, actor || b.owner_id, "branch.updated", { commit: next });
         });
     }
@@ -231,6 +234,10 @@ export function installOrchestration({
           db.prepare(
             "UPDATE managed_branches SET state='merged',merged_at=? WHERE id=?",
           ).run(now(), operation.branch_id);
+          workQueue.branchMerged(
+            branch(operation.branch_id),
+            operation.actor_id,
+          );
           notify(
             branch(operation.branch_id),
             operation.actor_id,
@@ -298,7 +305,8 @@ export function installOrchestration({
         .prepare(
           "SELECT b.*,r.name AS repository_name,u.name AS owner_name FROM managed_branches b JOIN repositories r ON r.id=b.repository_id JOIN users u ON u.id=b.owner_id ORDER BY b.id DESC",
         )
-        .all(),
+        .all()
+        .map((b) => ({ ...b, ...workQueue.branchState(b.id) })),
       capabilities: db
         .prepare("SELECT id,kind FROM users")
         .all()
@@ -399,9 +407,18 @@ export function installOrchestration({
       .parse(req.body);
     mutate(req, res, () => {
       id.parse(req.params.id);
+      const capabilityUser =
+        db.prepare("SELECT * FROM users WHERE id=?").get(req.params.id) ||
+        fail(404, "User not found");
+      const previousCapabilities = workQueue.capabilities(capabilityUser);
       db.prepare(
         "INSERT INTO work_capabilities VALUES(?,?,?) ON CONFLICT(user_id) DO UPDATE SET can_work=excluded.can_work,can_review=excluded.can_review",
       ).run(req.params.id, +input.can_work, +input.can_review);
+      if (
+        (input.can_work && !previousCapabilities.can_work) ||
+        (input.can_review && !previousCapabilities.can_review)
+      )
+        workQueue.eligibilityChanged(req.user.id, Number(req.params.id));
       return { user_id: Number(req.params.id), ...input };
     });
   });
@@ -448,7 +465,7 @@ export function installOrchestration({
           .get(b.id, t),
       );
     }
-    res.json(rows);
+    res.json(rows.map((b) => ({ ...b, ...workQueue.branchState(b.id) })));
   });
   app.get("/api/branches/:id", async (req, res) => {
     await withRepo(req, res, async () => res.json(detail(req.params.id)));
@@ -573,6 +590,7 @@ export function installOrchestration({
             next.id,
             b.id,
           );
+          workQueue.branchChanged(b, req.user.id);
           notify(
             { ...b, owner_id: next.id },
             req.user.id,
@@ -620,6 +638,45 @@ export function installOrchestration({
       }),
     ),
   );
+  for (const action of ["submit-review", "claim-review", "release-review"])
+    app.post(`/api/branches/:id/${action}`, async (req, res) => {
+      const input = z.object({ commit }).strict().parse(req.body);
+      await withRepo(req, res, async () => {
+        const b = branch(req.params.id);
+        if (b.head_commit !== input.commit)
+          fail(409, "Branch changed; refresh its current commit");
+        res.json(
+          atomic(() => {
+            if (action === "submit-review") {
+              workQueue.branchSubmit(b, req.user, input.commit);
+              notify(b, req.user.id, "branch.submitted", {
+                commit: input.commit,
+              });
+            }
+            if (action === "claim-review") {
+              workQueue.branchClaim(b, req.user, input.commit);
+              notify(b, req.user.id, "review.claimed", {
+                commit: input.commit,
+              });
+            }
+            if (action === "release-review") {
+              const c = workQueue.branchState(b.id).review_claim;
+              if (!c) fail(409, "No review claim to release");
+              if (c.user_id !== req.user.id && !req.user.admin)
+                fail(403, "Only the reviewer or an admin may release review");
+              db.prepare(
+                "DELETE FROM active_work_claims WHERE branch_id=?",
+              ).run(b.id);
+              notify(b, req.user.id, "review.released", {
+                commit: input.commit,
+              });
+              workQueue.reviewReleased(req.user.id, "branch", b.id, c.user_id);
+            }
+            return detail(b.id);
+          }),
+        );
+      });
+    });
   app.post("/api/branches/:id/reviews", async (req, res) => {
     capable(req.user, "can_review");
     const input = z
@@ -671,6 +728,7 @@ export function installOrchestration({
         fail(403, "A contributor cannot approve their own commits");
       res.json(
         atomic(() => {
+          workQueue.branchReviewed(b, req.user, input.decision);
           db.prepare(
             "INSERT INTO branch_reviews(branch_id,reviewer_id,commit_hash,target_commit,decision,body,require_human,created_at) VALUES(?,?,?,?,?,?,?,?)",
           ).run(
@@ -803,6 +861,7 @@ export function installOrchestration({
           db.prepare(
             "UPDATE git_operations SET state='complete' WHERE id=?",
           ).run(operation.id);
+          workQueue.branchMerged(b, req.user.id);
           notify(b, req.user.id, "branch.merged", { commit: sha });
           return detail(b.id);
         }),

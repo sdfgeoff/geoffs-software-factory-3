@@ -784,7 +784,7 @@ test("v1 migration preserves reply attachments and is idempotent", async () => {
       INSERT INTO attachments VALUES('legacy-attachment',1,1,'legacy.png','image/png',42,'stamp');`);
     db.close();
     db = openDatabase(path);
-    assert.equal(db.prepare("PRAGMA user_version").get().user_version, 4);
+    assert.equal(db.prepare("PRAGMA user_version").get().user_version, 5);
     const expected = {
       id: "legacy-attachment",
       reply_id: 1,

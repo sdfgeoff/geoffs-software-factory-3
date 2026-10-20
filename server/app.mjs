@@ -1,3 +1,4 @@
+import { installWorkQueue } from "./work-queue.mjs";
 import { installOrchestration, gitIdentity } from "./orchestration.mjs";
 import express from "express";
 import { searchPlatform } from "./search.mjs";
@@ -292,7 +293,17 @@ export function createApp({
     broadcast();
     res.json(result);
   }
+  const workQueue = installWorkQueue({
+    app,
+    db,
+    admin,
+    event,
+    participate,
+    mutate,
+    fail,
+  });
   installOrchestration({
+    workQueue,
     app,
     db,
     dataDir,
@@ -458,6 +469,11 @@ export function createApp({
       const { subscribed } = z
         .object({ subscribed: z.boolean() })
         .parse(req.body);
+      const wasSubscribed = !!db
+        .prepare(
+          "SELECT 1 FROM channel_subscriptions WHERE channel_id=? AND user_id=?",
+        )
+        .get(c.id, req.user.id);
       if (subscribed)
         db.prepare(
           "INSERT OR IGNORE INTO channel_subscriptions VALUES(?,?)",
@@ -466,6 +482,8 @@ export function createApp({
         db.prepare(
           "DELETE FROM channel_subscriptions WHERE channel_id=? AND user_id=?",
         ).run(c.id, req.user.id);
+      if (subscribed && !wasSubscribed)
+        workQueue.eligibilityChanged(req.user.id, req.user.id);
       return { subscribed };
     }),
   );
@@ -520,6 +538,7 @@ export function createApp({
       .map((e) => ({ ...e, payload: JSON.parse(e.payload) }));
     res.json({
       ...db.prepare(threadQuery + " WHERE t.id=?").get(t.id),
+      ...workQueue.threadState(t.id),
       attachments: db
         .prepare("SELECT * FROM attachments WHERE thread_id=?")
         .all(t.id),
@@ -602,6 +621,7 @@ export function createApp({
         },
         mentioned,
       );
+      workQueue.onThreadChange(null, t, req.user.id);
       return t;
     }),
   );
@@ -614,8 +634,40 @@ export function createApp({
           body: text.optional(),
           status_id: positive.optional(),
           assignee_id: positive.nullable().optional(),
+          expected_updated_at: z.string().optional(),
         })
         .parse(req.body);
+      if (
+        input.expected_updated_at &&
+        input.expected_updated_at !== t.updated_at
+      )
+        fail(409, "Thread changed; refresh before updating");
+      delete input.expected_updated_at;
+      const activeClaim = workQueue.threadState(t.id).active_claim;
+      const transferring =
+        input.assignee_id !== undefined && input.assignee_id !== t.assignee_id;
+      if (
+        transferring &&
+        t.assignee_id &&
+        t.assignee_id !== req.user.id &&
+        !req.user.admin
+      )
+        fail(
+          409,
+          "This ticket is reserved for its assigned worker; ask the owner or an admin to hand it off",
+        );
+      if (
+        activeClaim &&
+        (transferring ||
+          (input.status_id !== undefined && input.status_id !== t.status_id)) &&
+        activeClaim.user_id !== req.user.id &&
+        !(transferring && t.assignee_id === req.user.id) &&
+        !req.user.admin
+      )
+        fail(
+          409,
+          "This ticket is actively claimed; request an explicit handoff",
+        );
       const changes = {};
       for (const [key, value] of Object.entries(input))
         if (value !== t[key]) changes[key] = { from: t[key], to: value };
@@ -651,6 +703,7 @@ export function createApp({
           ...(changes.assignee_id?.to ? [changes.assignee_id.to] : []),
         ],
       );
+      workQueue.onThreadChange(t, updated, req.user.id);
       return updated;
     }),
   );
@@ -898,6 +951,7 @@ export function createApp({
     res.json({
       ...agent,
       instance_id: undefined,
+      work_preferences: workQueue.preferences(agent.user_id),
       logs,
       subscriptions: db
         .prepare("SELECT channel_id FROM channel_subscriptions WHERE user_id=?")
@@ -944,6 +998,11 @@ export function createApp({
         .object({ channel_id: positive, subscribed: z.boolean() })
         .parse(req.body);
       getChannel(channel_id);
+      const wasSubscribed = !!db
+        .prepare(
+          "SELECT 1 FROM channel_subscriptions WHERE channel_id=? AND user_id=?",
+        )
+        .get(channel_id, id);
       if (subscribed)
         db.prepare(
           "INSERT OR IGNORE INTO channel_subscriptions VALUES(?,?)",
@@ -952,6 +1011,8 @@ export function createApp({
         db.prepare(
           "DELETE FROM channel_subscriptions WHERE channel_id=? AND user_id=?",
         ).run(channel_id, id);
+      if (subscribed && !wasSubscribed)
+        workQueue.eligibilityChanged(req.user.id, id);
       return { ok: true };
     }),
   );
@@ -1081,7 +1142,11 @@ export function createApp({
         "SELECT a.*,u.name,u.username FROM agents a JOIN users u ON u.id=a.user_id WHERE user_id=?",
       )
       .get(req.user.id);
-    res.json({ ...config, instance_id: undefined });
+    res.json({
+      ...config,
+      instance_id: undefined,
+      work_preferences: workQueue.preferences(req.user.id),
+    });
   });
   app.use("/api/worker", (req, res, next) => {
     const a = db

@@ -46,11 +46,17 @@ import {
   Wifi,
   AlertCircle,
   CheckCircle2,
+  ClipboardList,
 } from "lucide-react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import "./style.css";
 import { RepositoriesPage, ThreadBranches } from "./Orchestration.jsx";
+import {
+  WorkQueuePage,
+  WorkPreferences,
+  ThreadWorkControl,
+} from "./WorkQueue.jsx";
 
 async function api(path, options = {}) {
   const response = await fetch("/api" + path, {
@@ -93,6 +99,61 @@ const timeAgo = (s) => {
         ? `${Math.floor(m / 60)}h ago`
         : date(s);
 };
+function notificationVerb(notification) {
+  if (
+    notification.type === "work.reviewed" ||
+    notification.type === "branch.reviewed"
+  )
+    return notification.payload.decision === "approved"
+      ? "approved work in"
+      : "requested changes in";
+  return (
+    {
+      "notification.scheduled": "scheduled",
+      "reply.created": "replied to",
+      "thread.created": "started",
+      "reply.edited": "edited a reply in",
+      "work.ready": "made work available in",
+      "review.ready": "made a review available in",
+      "work.claimed": "claimed work in",
+      "work.released": "released work in",
+      "work.submitted": "submitted work for review in",
+      "review.claimed": "claimed review of",
+      "review.released": "released review of",
+      "branch.submitted": "submitted a branch for review in",
+      "branch.merged": "merged a branch in",
+    }[notification.type] || "updated"
+  );
+}
+function notificationSummary(notification) {
+  const payload = notification.payload;
+  if (payload.body || payload.summary)
+    return (payload.body || payload.summary).slice(0, 160);
+  const descriptions = {
+    "work.ready": "Available for voluntary pickup in your Work queue.",
+    "review.ready":
+      "A submitted outcome is ready for review in your Work queue.",
+    "work.claimed": "Implementation is reserved for this worker.",
+    "work.released": "The active work claim was released.",
+    "work.submitted":
+      "Outcome submitted for review; the worker can claim more work.",
+    "review.claimed": "This review is reserved for the reviewer.",
+    "review.released": "The review is available for another eligible reviewer.",
+    "branch.submitted":
+      "The submitted commit is available for subscribed reviewers.",
+  };
+  if (descriptions[notification.type]) return descriptions[notification.type];
+  if (payload.decision)
+    return payload.decision === "approved"
+      ? "The submitted revision was approved."
+      : "Changes were requested from the original worker.";
+  const changes = Object.keys(payload.changes || {})
+    .map((key) => key.replace("_id", ""))
+    .join(", ");
+  return changes
+    ? changes + " changed"
+    : "Open the thread to inspect this activity.";
+}
 const sizeLabel = (n) =>
   n < 1024
     ? `${n} B`
@@ -519,6 +580,10 @@ function App() {
     [selectedId, setSelectedId] = useState(null),
     [searchOpen, setSearchOpen] = useState(false),
     [detailVersion, setDetailVersion] = useState(0),
+    [detailContext, setDetailContext] = useState({
+      tab: "discussion",
+      branchId: null,
+    }),
     [searchTarget, setSearchTarget] = useState(null),
     [detail, setDetail] = useState(null),
     [modal, setModal] = useState(null),
@@ -699,7 +764,9 @@ function App() {
     if (view === "board") setModal({ type: "thread" });
     else document.getElementById("new-thread-message")?.focus();
   }
-  function openThread(id) {
+  function openThread(id, tab = "discussion", branchId = null) {
+    setDetailContext({ tab, branchId });
+    setDetailVersion((version) => version + 1);
     setSelectedId(id);
     if (id !== selectedId) setDetail(null);
   }
@@ -781,6 +848,13 @@ function App() {
             <Icon icon={Users} />
             People & agents
             <span className="nav-count">{data.users.length}</span>
+          </button>
+          <button
+            className={page === "queue" ? "active" : ""}
+            onClick={() => go("queue")}
+          >
+            <Icon icon={ClipboardList} />
+            Work queue
           </button>
           <button
             className={page === "repositories" ? "active" : ""}
@@ -905,9 +979,11 @@ function App() {
                   ? "Inbox"
                   : page === "team"
                     ? "People & agents"
-                    : page === "repositories"
-                      ? "Repositories"
-                      : "Settings"}
+                    : page === "queue"
+                      ? "Work queue"
+                      : page === "repositories"
+                        ? "Repositories"
+                        : "Settings"}
             </strong>
           </div>
           <div className="topbar-right">
@@ -1447,30 +1523,25 @@ function App() {
                     />
                     <div>
                       <div className="inbox-title">
-                        <strong>{n.actor_name}</strong>{" "}
-                        {n.type === "notification.scheduled"
-                          ? "scheduled"
-                          : n.type === "reply.created"
-                            ? "replied to"
-                            : n.type === "thread.created"
-                              ? "started"
-                              : n.type === "reply.edited"
-                                ? "edited a reply in"
-                                : "updated"}{" "}
-                        <strong>{n.payload.title || "a thread"}</strong>
+                        <strong>{n.actor_name}</strong> {notificationVerb(n)}{" "}
+                        <strong>
+                          {n.payload.title ||
+                            (n.thread_id
+                              ? `TW-${n.thread_id}`
+                              : "the workspace")}
+                        </strong>
                       </div>
                       <p>
-                        {(n.type === "notification.scheduled"
+                        {n.type === "notification.scheduled"
                           ? n.payload.body
-                          : n.payload.body?.slice(0, 160)) ||
-                          Object.keys(n.payload.changes || {})
-                            .map((k) => k.replace("_id", ""))
-                            .join(", ") + " changed"}
+                          : notificationSummary(n)}
                       </p>
                       <span>
                         {n.channel_name
                           ? `#${n.channel_name}`
-                          : "Private reminder"}{" "}
+                          : n.type === "notification.scheduled"
+                            ? "Private reminder"
+                            : "Workspace activity"}{" "}
                         <span className="meta-dot">·</span>{" "}
                         {timeAgo(n.created_at)}
                       </span>
@@ -1612,6 +1683,15 @@ function App() {
             </div>
           </>
         )}
+        {page === "queue" && (
+          <WorkQueuePage
+            key={data.user.id}
+            api={api}
+            data={data}
+            refreshKey={refreshKey}
+            openThread={openThread}
+          />
+        )}
         {page === "repositories" && (
           <RepositoriesPage
             key={data.user.id}
@@ -1681,6 +1761,10 @@ function App() {
               <ThreadDetail
                 key={`${selectedId}:${detailVersion}`}
                 thread={detail}
+                initialTab={detailContext.tab}
+                initialBranchId={detailContext.branchId}
+                refreshKey={refreshKey}
+                refresh={refresh}
                 data={data}
                 act={act}
                 notify={notify}
@@ -1870,8 +1954,19 @@ function SettingsPage({ data, act, setModal, notify }) {
     </>
   );
 }
-function ThreadDetail({ thread: t, data, act, notify, close, edit }) {
-  const [tab, setTab] = useState("discussion"),
+function ThreadDetail({
+  thread: t,
+  data,
+  act,
+  notify,
+  close,
+  edit,
+  initialTab = "discussion",
+  initialBranchId,
+  refreshKey,
+  refresh,
+}) {
+  const [tab, setTab] = useState(initialTab),
     [editing, setEditing] = useState(null),
     [editBody, setEditBody] = useState("");
   const end = useRef();
@@ -1988,6 +2083,14 @@ function ThreadDetail({ thread: t, data, act, notify, close, edit }) {
         </label>
       </div>
       <div className="thread-scroll">
+        <ThreadWorkControl
+          key={t.id}
+          api={api}
+          thread={t}
+          data={data}
+          refreshKey={refreshKey}
+          onDone={refresh}
+        />
         <div className="thread-description">
           <RichText>{t.body}</RichText>
           <Attachments files={t.attachments} />
@@ -2021,6 +2124,7 @@ function ThreadDetail({ thread: t, data, act, notify, close, edit }) {
             api={api}
             data={data}
             threadId={t.id}
+            initialBranchId={initialBranchId}
             refreshKey={t.events?.length}
           />
         ) : tab === "discussion" ? (
@@ -3244,6 +3348,21 @@ function AgentDetail({
                 Save configuration
               </button>
             </form>
+            <WorkPreferences
+              api={api}
+              path={`/admin/agents/${id}/work-preferences`}
+              initial={
+                agent.work_preferences || {
+                  notify_ready_work: false,
+                  notify_ready_reviews: false,
+                }
+              }
+              agent
+              onDone={() => {
+                load();
+                notify("Work preferences updated");
+              }}
+            />
             <div className="agent-subscriptions">
               <h3>Channel subscriptions</h3>
               <p className="muted">

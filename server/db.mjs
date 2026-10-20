@@ -64,6 +64,17 @@ export function openDatabase(path) {
       CREATE TABLE IF NOT EXISTS git_push_journal (repository_id INTEGER PRIMARY KEY REFERENCES repositories(id), actor_id INTEGER NOT NULL REFERENCES users(id));
       CREATE TABLE IF NOT EXISTS git_operations (id INTEGER PRIMARY KEY, repository_id INTEGER NOT NULL REFERENCES repositories(id), branch_id INTEGER REFERENCES managed_branches(id), actor_id INTEGER NOT NULL REFERENCES users(id), kind TEXT NOT NULL, commit_hash TEXT NOT NULL, previous_commit TEXT NOT NULL, state TEXT NOT NULL DEFAULT 'pending', error TEXT, created_at TEXT NOT NULL);
     `);
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS work_preferences(user_id INTEGER PRIMARY KEY REFERENCES users(id),notify_ready_work INTEGER NOT NULL DEFAULT 0,notify_ready_reviews INTEGER NOT NULL DEFAULT 0);
+      CREATE TABLE IF NOT EXISTS active_work_claims(user_id INTEGER PRIMARY KEY REFERENCES users(id),kind TEXT NOT NULL CHECK(kind IN ('work','review')),thread_id INTEGER UNIQUE REFERENCES threads(id),branch_id INTEGER UNIQUE REFERENCES managed_branches(id),submission_id INTEGER,commit_hash TEXT,created_at TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS work_submissions(id INTEGER PRIMARY KEY,thread_id INTEGER NOT NULL REFERENCES threads(id),worker_id INTEGER NOT NULL REFERENCES users(id),submitted_by INTEGER NOT NULL REFERENCES users(id),summary TEXT NOT NULL,state TEXT NOT NULL DEFAULT 'pending',created_at TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS work_reviews(id INTEGER PRIMARY KEY,submission_id INTEGER NOT NULL REFERENCES work_submissions(id),reviewer_id INTEGER NOT NULL REFERENCES users(id),decision TEXT NOT NULL,body TEXT NOT NULL,created_at TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS branch_submissions(branch_id INTEGER PRIMARY KEY REFERENCES managed_branches(id),commit_hash TEXT NOT NULL,submitted_by INTEGER NOT NULL REFERENCES users(id),state TEXT NOT NULL DEFAULT 'pending',created_at TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS queue_signals(kind TEXT NOT NULL,entity_id INTEGER NOT NULL,revision INTEGER NOT NULL DEFAULT 1,PRIMARY KEY(kind,entity_id));
+      CREATE TABLE IF NOT EXISTS queue_wakes(user_id INTEGER NOT NULL REFERENCES users(id),kind TEXT NOT NULL,entity_id INTEGER NOT NULL,revision TEXT NOT NULL,PRIMARY KEY(user_id,kind,entity_id,revision));
+    `);
+    if (db.prepare("PRAGMA user_version").get().user_version < 5)
+      db.exec("PRAGMA user_version=5");
     if (db.prepare("PRAGMA user_version").get().user_version < 4)
       db.exec("PRAGMA user_version=4");
     if (db.prepare("PRAGMA user_version").get().user_version < 3)

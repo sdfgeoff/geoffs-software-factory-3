@@ -52,6 +52,98 @@ tool(
   () => api("/bootstrap"),
 );
 tool(
+  "work_queue",
+  "Discover eligible Ready tickets and submitted reviews in your subscribed channels, plus your active claim. Queue notifications are invitations; re-read before claiming. Reserved requested fixes remain with their original worker.",
+  {},
+  () => api("/work-queue"),
+);
+tool(
+  "set_work_notifications",
+  "Opt in/out of durable notifications for eligible Ready work and submitted reviews in subscribed channels. Review notifications require review capability. Enabling also checks existing queued work; it never forces a claim or reply.",
+  { notify_ready_work: z.boolean(), notify_ready_reviews: z.boolean() },
+  (body) => api("/work-preferences", { method: "PUT", body }),
+);
+tool(
+  "claim_ticket",
+  "Atomically claim an eligible Ready ticket (or resume your reserved requested fixes). Sets ownership and In progress. Only one active work/review claim per account; conflicts return an error without stealing work.",
+  { thread_id: id, expected_updated_at: z.string().optional() },
+  ({ thread_id, ...body }) =>
+    api(`/threads/${thread_id}/claim`, { method: "POST", body }),
+);
+tool(
+  "release_ticket_claim",
+  "Explicitly release your active ticket claim so eligible teammates can pick it up. Use only when relinquishing the work; submitting for review preserves your ownership instead.",
+  { thread_id: id },
+  ({ thread_id }) =>
+    api(`/threads/${thread_id}/release-claim`, { method: "POST", body: {} }),
+);
+tool(
+  "submit_ticket_work",
+  "Submit non-code ticket outputs for review with a summary and links to evidence. Releases your active capacity while preserving assignment. For code, submit each branch with submit_branch_review; no merge happens automatically.",
+  { thread_id: id, summary: z.string().max(50000).optional() },
+  ({ thread_id, ...body }) =>
+    api(`/threads/${thread_id}/submit-work`, { method: "POST", body }),
+);
+tool(
+  "submit_branch_review",
+  "Submit the exact current branch commit for review by eligible teammates in linked tickets' channels. Releases implementation capacity while ownership stays with the worker. Pushes require renewed submission/review. Approval does not merge.",
+  { branch_id: id, commit: z.string().regex(/^[a-f0-9]{40}$/) },
+  ({ branch_id, ...body }) =>
+    api(`/branches/${branch_id}/submit-review`, {
+      method: "POST",
+      body,
+      timeout: 120000,
+    }),
+);
+tool(
+  "claim_branch_review",
+  "Atomically reserve review of a submitted exact branch revision. Requires review capability and membership in a linked channel; excludes the worker/contributors and any other active claim.",
+  { branch_id: id, commit: z.string().regex(/^[a-f0-9]{40}$/) },
+  ({ branch_id, ...body }) =>
+    api(`/branches/${branch_id}/claim-review`, {
+      method: "POST",
+      body,
+      timeout: 120000,
+    }),
+);
+tool(
+  "release_branch_review",
+  "Release your branch review claim without approving or requesting changes; other eligible reviewers can claim it.",
+  { branch_id: id, commit: z.string().regex(/^[a-f0-9]{40}$/) },
+  ({ branch_id, ...body }) =>
+    api(`/branches/${branch_id}/release-review`, {
+      method: "POST",
+      body,
+      timeout: 120000,
+    }),
+);
+tool(
+  "claim_ticket_review",
+  "Atomically reserve a submitted non-code ticket review. Read the ticket and its output/evidence before deciding.",
+  { thread_id: id, submission_id: id },
+  ({ thread_id, ...body }) =>
+    api(`/threads/${thread_id}/claim-review`, { method: "POST", body }),
+);
+tool(
+  "release_ticket_review",
+  "Release your non-code ticket review claim without a decision so another eligible reviewer can pick it up.",
+  { thread_id: id, submission_id: id },
+  ({ thread_id, ...body }) =>
+    api(`/threads/${thread_id}/release-review`, { method: "POST", body }),
+);
+tool(
+  "review_ticket",
+  "Review a specific non-code ticket submission. Approval completes the ticket; requested changes keep it reserved for the original worker. Requires a valid review claim/capability; self review is forbidden. Code branch approvals must use review_branch.",
+  {
+    thread_id: id,
+    submission_id: id,
+    decision: z.enum(["approved", "changes_requested"]),
+    body: z.string().max(50000).optional(),
+  },
+  ({ thread_id, ...body }) =>
+    api(`/threads/${thread_id}/reviews`, { method: "POST", body }),
+);
+tool(
   "orchestration_overview",
   "List registered repositories, managed branches, and explicit work/review capabilities. Work is voluntary; discussion and non-code tickets need no branch or approved plan.",
   {},
@@ -237,13 +329,14 @@ tool(
 );
 tool(
   "update_thread",
-  "Edit title/description, change status, assign or unassign a work item.",
+  "Edit title/description, change status, or explicitly assign/unassign a work item. Use claim_ticket for Ready work pickup; assignment must not steal another worker's claim.",
   {
     thread_id: id,
     title: z.string().optional(),
     body: z.string().optional(),
     status_id: id.optional(),
     assignee_id: id.nullable().optional(),
+    expected_updated_at: z.string().optional(),
   },
   ({ thread_id, ...body }) =>
     api(`/threads/${thread_id}`, { method: "PATCH", body }),
