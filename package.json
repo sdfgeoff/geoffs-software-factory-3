@@ -17,11 +17,13 @@
     "check": "node scripts/check.mjs",
     "test:codex": "node tests/codex-smoke.mjs",
     "format": "prettier --write server agent scripts tests web compose*.yaml package.json",
-    "test:browser": "npm run build && node --test tests/browser.mjs"
+    "test:browser": "npm run build && node --test tests/browser.mjs",
+    "test:desktop": "node tests/desktop-smoke.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.28.0",
     "bcryptjs": "^3.0.2",
+    "chrome-devtools-mcp": "1.11.0",
     "dotenv": "^17.2.3",
     "express": "^5.1.0",
     "lucide-react": "^0.468.0",

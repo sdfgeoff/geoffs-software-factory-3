@@ -5,6 +5,12 @@ import { readFile, writeFile, mkdir, realpath } from "node:fs/promises";
 import { resolve, relative, dirname, isAbsolute } from "node:path";
 import { createApi } from "./api.mjs";
 import { prepareBranchWorkspace } from "./git-workspace.mjs";
+import {
+  screenshotDesktop,
+  launchDesktop,
+  listDesktopWindows,
+  desktopInput,
+} from "./desktop.mjs";
 
 const api = createApi();
 const workspace = await realpath(resolve(process.env.AGENT_WORKSPACE || "."));
@@ -398,5 +404,58 @@ tool(
   { attachment_id: z.string().uuid() },
   ({ attachment_id }) =>
     api(`/attachments/${attachment_id}`, { method: "DELETE" }),
+);
+tool(
+  "desktop_launch",
+  "Launch an installed graphical or CLI application on your private virtual Linux desktop. Runs in your workspace; returns PID and an output log. No host desktop access. Processes stop with the worker container.",
+  {
+    command: z.string().min(1).max(1000),
+    args: z.array(z.string().max(10000)).max(100).optional(),
+    cwd: z.string().optional(),
+  },
+  (args) => launchDesktop(workspace, args),
+);
+tool(
+  "desktop_list_windows",
+  "List visible windows on your private virtual desktop, including native Linux applications and Chromium.",
+  {},
+  () => listDesktopWindows(),
+);
+tool(
+  "desktop_input",
+  "Click, type text, or press a key on your private virtual desktop. For browser pages prefer Chrome DevTools tools. Key examples: Return, ctrl+l, alt+F4. Input goes to the focused window.",
+  {
+    action: z.enum(["click", "type", "key"]),
+    x: z.number().int().min(0).max(8192).optional(),
+    y: z.number().int().min(0).max(8192).optional(),
+    button: z.number().int().min(1).max(5).optional(),
+    text: z.string().max(10000).optional(),
+    key: z.string().max(200).optional(),
+  },
+  desktopInput,
+);
+server.registerTool(
+  "desktop_screenshot",
+  {
+    description:
+      "Capture and inspect your entire private virtual desktop, including non-browser applications. Returns a PNG image and saved workspace path. Optional path must be a new .png file inside your workspace. Does not publish anything; upload_attachment and post_reply can share it explicitly.",
+    inputSchema: { path: z.string().optional() },
+  },
+  async ({ path }) => {
+    try {
+      const capture = await screenshotDesktop(workspace, path);
+      return {
+        content: [
+          { type: "text", text: JSON.stringify({ path: capture.path }) },
+          { type: "image", mimeType: "image/png", data: capture.data },
+        ],
+      };
+    } catch (error) {
+      return {
+        isError: true,
+        content: [{ type: "text", text: error.message }],
+      };
+    }
+  },
 );
 await server.connect(new StdioServerTransport());

@@ -5,6 +5,7 @@ import { join, resolve } from "node:path";
 import assert from "node:assert/strict";
 import { createApp } from "../server/app.mjs";
 import { CodexClient } from "../agent/codex.mjs";
+import { workerMcpConfig } from "../agent/mcp-config.mjs";
 const dir = mkdtempSync(join(tmpdir(), "threadwork-real-codex-"));
 const home = join(dir, "codex");
 mkdirSync(home);
@@ -19,7 +20,11 @@ const server = app.listen(0, "127.0.0.1");
 await new Promise((r) => server.once("listening", r));
 writeFileSync(
   join(home, "config.toml"),
-  `cli_auth_credentials_store="file"\n[mcp_servers.threadwork]\ncommand=${JSON.stringify(process.execPath)}\nargs=[${JSON.stringify(resolve("agent/mcp.mjs"))}]\nenv_vars=["THREADWORK_URL","AGENT_TOKEN","AGENT_WORKSPACE"]\nrequired=true\n`,
+  workerMcpConfig({
+    workspace: dir,
+    stateDir: dir,
+    desktop: process.env.THREADWORK_DESKTOP === "true",
+  }),
 );
 const clientOptions = {
   cwd: dir,
@@ -54,6 +59,21 @@ try {
     Object.keys(mcp.tools).length >= 20,
     "Codex discovered board and reminder tools",
   );
+  if (process.env.THREADWORK_DESKTOP === "true") {
+    const browser = status.data.find((s) => s.name === "chrome_devtools");
+    assert.ok(browser, "Browser MCP server is configured");
+    assert.ok(
+      browser.tools.take_screenshot,
+      "Codex discovered browser screenshots",
+    );
+    assert.ok(
+      mcp.tools.desktop_screenshot,
+      "Codex discovered native desktop screenshots",
+    );
+    console.log(
+      `Codex discovered Chrome DevTools (${Object.keys(browser.tools).length} tools) and native desktop tools.`,
+    );
+  }
   await client.call("thread/inject_items", {
     threadId: thread.thread.id,
     items: [

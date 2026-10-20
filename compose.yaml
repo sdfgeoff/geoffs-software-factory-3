@@ -12,7 +12,8 @@ x-agent: &agent
   security_opt:
     - no-new-privileges:true
   cap_drop: [ALL]
-  pids_limit: 256
+  pids_limit: 512
+  shm_size: 256mb
   healthcheck:
     test:
       [

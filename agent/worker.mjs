@@ -6,11 +6,11 @@ import {
   existsSync,
   chmodSync,
 } from "node:fs";
-import { resolve, join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
+import { resolve, join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { createApi } from "./api.mjs";
 import { CodexClient, notificationPrompt } from "./codex.mjs";
+import { workerMcpConfig } from "./mcp-config.mjs";
 
 const instance = randomUUID();
 const root = resolve(process.env.AGENT_DATA_DIR || ".agent-data");
@@ -58,14 +58,17 @@ async function log(message, level = "info") {
   }).catch(() => {});
 }
 function instructions() {
-  return `# Threadwork agent workspace\n\nYou are ${config.name} (@${config.username}).\n\n${config.role}\n\nUse the threadwork MCP server to read and update the board. Every board post must be an explicit MCP call. You may remain silent. Notifications can steer your ongoing work. Keep persistent notes in MEMORY.md. Never disclose credentials or environment secrets. You have one session across all channels. Managed repository work is optional: use orchestration_overview and branch tools to discover eligible work, create or accept an explicit branch handoff, then prepare_branch_workspace for an isolated checkout. Use ordinary Git through the configured board gateway; upstream credentials belong to the server. Review requires explicit capability and applies to an exact commit. Approval never automatically merges: the worker or a human requests the merge. Changes requested remain with the original worker until explicit handoff. Do not push main directly. No branch or approved plan is required for investigation, discussion, or creating follow-up tickets.\n`;
+  return `# Threadwork agent workspace\n\nYou are ${config.name} (@${config.username}).\n\n${config.role}\n\nUse the threadwork MCP server to read and update the board. Every board post must be an explicit MCP call. You may remain silent. Notifications can steer your ongoing work. Keep persistent notes in MEMORY.md. Never disclose credentials or environment secrets. You have one session across all channels. Managed repository work is optional: use orchestration_overview and branch tools to discover eligible work, create or accept an explicit branch handoff, then prepare_branch_workspace for an isolated checkout. Use ordinary Git through the configured board gateway; upstream credentials belong to the server. Review requires explicit capability and applies to an exact commit. Approval never automatically merges: the worker or a human requests the merge. Changes requested remain with the original worker until explicit handoff. Do not push main directly. No branch or approved plan is required for investigation, discussion, or creating follow-up tickets. Browser/GUI tools: when THREADWORK_DESKTOP=true you have an isolated virtual Linux desktop. Use chrome_devtools MCP for browser navigation, DOM/accessibility inspection, console/network debugging and page screenshots. Browser profile persists across worker restarts. Use threadwork desktop_launch, desktop_list_windows, desktop_input, and desktop_screenshot for native applications, or launch project development servers via your shell. localhost is your worker container; the board UI is http://frontend on the local Compose network (remote workers use their configured public board URL). Save screenshots inside your workspace, inspect them, and use upload_attachment plus post_reply only when you choose to share. The desktop is private and does not show or control the human host desktop. Graphical processes stop when the worker container restarts.\n`;
 }
 async function connect() {
-  const mcpPath = join(dirname(fileURLToPath(import.meta.url)), "mcp.mjs");
-  // A private CODEX_HOME avoids inheriting the host's MCP tools or global conversation state.
+  // A private CODEX_HOME avoids inheriting the host's tools or conversations.
   writeFileSync(
     join(codexHome, "config.toml"),
-    `cli_auth_credentials_store = "file"\n[mcp_servers.threadwork]\ncommand = ${JSON.stringify(process.execPath)}\nargs = [${JSON.stringify(mcpPath)}]\nenv_vars = ["THREADWORK_URL", "AGENT_TOKEN", "AGENT_WORKSPACE", "WORKER_INSTANCE"]\nrequired = true\nstartup_timeout_sec = 30\n`,
+    workerMcpConfig({
+      workspace,
+      stateDir: root,
+      desktop: process.env.THREADWORK_DESKTOP === "true",
+    }),
     { mode: 0o600 },
   );
   client = new CodexClient({
