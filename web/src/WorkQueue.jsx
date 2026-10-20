@@ -182,7 +182,8 @@ export function WorkQueuePage({ api, data, refreshKey, openThread }) {
             <p>
               Eligible work comes from subscribed channels. Claim one block at a
               time; submitting frees your capacity. Work and review permissions
-              are configured in Repositories.
+              are configured in Repositories. Work must be Ready and unassigned;
+              reviewers cannot review their own output.
             </p>
           </details>
         </div>
@@ -272,10 +273,7 @@ export function WorkQueuePage({ api, data, refreshKey, openThread }) {
               </article>
             ))
           ) : (
-            <p className="muted">
-              No eligible work right now. Subscribe to a channel and move an
-              unassigned ticket to Ready; implementation permission is required.
-            </p>
+            <p className="muted">No eligible work right now.</p>
           )}
         </section>
         <section className="orchestration-card">
@@ -336,10 +334,7 @@ export function WorkQueuePage({ api, data, refreshKey, openThread }) {
               );
             })
           ) : (
-            <p className="muted">
-              No eligible reviews right now. Submitted work appears here for
-              subscribed reviewers who did not produce it.
-            </p>
+            <p className="muted">No eligible reviews right now.</p>
           )}
         </section>
         <section className="orchestration-card">

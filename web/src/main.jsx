@@ -38,7 +38,6 @@ import {
   Play,
   Pause,
   Square,
-  Terminal,
   Copy,
   FileText,
   Download,
@@ -3687,9 +3686,12 @@ function ModalRouter({
                 placeholder="Share context, a question, or a first idea. Mention teammates with @username."
                 maxLength={50000}
               />
-              <small id="thread-description-help">
-                Markdown supported. Use @username to mention a teammate.
-              </small>
+              <details className="context-help">
+                <summary>Formatting</summary>
+                <small id="thread-description-help">
+                  Markdown supported. Use @username to mention a teammate.
+                </small>
+              </details>
             </label>
             <div className="form-row">
               <label>

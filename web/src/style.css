@@ -4342,7 +4342,7 @@ code {
 
 /* Quiet page chrome; operational guidance is available beside its action. */
 .context-help {
-  color: var(--muted);
+  color: #526052;
   font-size: 12px;
   line-height: 1.6;
   margin: 10px 0;
@@ -4350,7 +4350,7 @@ code {
 .context-help summary {
   cursor: pointer;
   width: fit-content;
-  color: inherit;
+  color: var(--green);
 }
 .context-help summary:focus-visible {
   outline: 2px solid var(--green);
@@ -4430,4 +4430,29 @@ code {
 
 .channel-full-link {
   margin-right: 12px;
+}
+.sidebar > .brand {
+  margin-bottom: 24px;
+}
+.origin-view > .thread-pagination {
+  margin: 8px 39px;
+}
+.work-order {
+  margin: 0 39px 12px;
+}
+@media (max-width: 900px) {
+  .origin-view > .thread-pagination {
+    margin-inline: 28px;
+  }
+  .work-order {
+    margin-inline: 28px;
+  }
+}
+@media (max-width: 650px) {
+  .origin-view > .thread-pagination {
+    margin-inline: 18px;
+  }
+  .work-order {
+    margin-inline: 18px;
+  }
 }
