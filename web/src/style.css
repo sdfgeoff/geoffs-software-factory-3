@@ -3669,3 +3669,7 @@ code {
     padding: 10px 12px;
   }
 }
+.reminder-upcoming .reminder-row strong {
+  display: block;
+  white-space: pre-wrap;
+}
