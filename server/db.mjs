@@ -77,6 +77,9 @@ export function openDatabase(path) {
     // retain notification_inbox for worker accepted_at/oldest-first delivery.
     db.exec(`CREATE INDEX IF NOT EXISTS notification_latest ON notifications(user_id,id);
       CREATE INDEX IF NOT EXISTS notification_unread ON notifications(user_id) WHERE read_at IS NULL;`);
+    db.exec("CREATE INDEX IF NOT EXISTS event_thread ON events(thread_id,id)");
+    if (db.prepare("PRAGMA user_version").get().user_version < 7)
+      db.exec("PRAGMA user_version=7");
     if (db.prepare("PRAGMA user_version").get().user_version < 6)
       db.exec("PRAGMA user_version=6");
     if (db.prepare("PRAGMA user_version").get().user_version < 5)

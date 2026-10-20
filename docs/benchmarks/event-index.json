@@ -1,0 +1,294 @@
+{
+  "environment": {
+    "node": "v24.22.0",
+    "platform": "linux",
+    "arch": "x64"
+  },
+  "notes": [
+    "Warm local sequential HTTP runs on shared hardware; not a capacity/SLA result.",
+    "Same code and copied fixture in both phases; before drops only event_thread. Inbox indexes remain present.",
+    "One unrecorded warm-up and five samples for each target. Timing includes body transfer and client JSON parsing.",
+    "Three committed batches of 1000 short-payload event inserts, hot thread and spread threads. Cleanup excluded; not full posting API/fan-out."
+  ],
+  "phases": {
+    "before": {
+      "api": {
+        "old": {
+          "thread_id": 1,
+          "n": 5,
+          "median_ms": 769.4822920000006,
+          "max_ms": 902.9050259999967,
+          "samples_ms": [
+            691.3053690000015,
+            667.8246690000014,
+            868.5224259999995,
+            902.9050259999967,
+            769.4822920000006
+          ],
+          "bytes": 317353,
+          "replies": 300,
+          "activity": 100,
+          "response_sha256": "fc20dfc4956991eae810f699c9ad76d4b01931fdfc04fb1f82d51cf5db5f0b88"
+        },
+        "middle": {
+          "thread_id": 5000,
+          "n": 5,
+          "median_ms": 330.6215220000013,
+          "max_ms": 343.79436500000156,
+          "samples_ms": [
+            330.6215220000013,
+            332.73170599999867,
+            343.79436500000156,
+            322.91527700000006,
+            321.00561899999593
+          ],
+          "bytes": 328669,
+          "replies": 300,
+          "activity": 100,
+          "response_sha256": "a66d3db66184c0f40aa054e91ce538764aac4b044cb9b81f1869574206d6e7d4"
+        },
+        "newest": {
+          "thread_id": 10000,
+          "n": 5,
+          "median_ms": 7.131209999999555,
+          "max_ms": 9.51929299999756,
+          "samples_ms": [
+            7.131209999999555,
+            9.51929299999756,
+            6.7676399999982095,
+            6.619072000001324,
+            8.557465999998385
+          ],
+          "bytes": 329471,
+          "replies": 300,
+          "activity": 100,
+          "response_sha256": "b2e74c16dbc6635ce0445f6861ac95af54e753c889f66bde5b66f8021a1b9207"
+        }
+      },
+      "plans": {
+        "old": [
+          {
+            "id": 5,
+            "parent": 0,
+            "notused": 216,
+            "detail": "SCAN e"
+          },
+          {
+            "id": 9,
+            "parent": 0,
+            "notused": 45,
+            "detail": "SEARCH u USING INTEGER PRIMARY KEY (rowid=?)"
+          }
+        ],
+        "middle": [
+          {
+            "id": 5,
+            "parent": 0,
+            "notused": 216,
+            "detail": "SCAN e"
+          },
+          {
+            "id": 9,
+            "parent": 0,
+            "notused": 45,
+            "detail": "SEARCH u USING INTEGER PRIMARY KEY (rowid=?)"
+          }
+        ],
+        "newest": [
+          {
+            "id": 5,
+            "parent": 0,
+            "notused": 216,
+            "detail": "SCAN e"
+          },
+          {
+            "id": 9,
+            "parent": 0,
+            "notused": 45,
+            "detail": "SEARCH u USING INTEGER PRIMARY KEY (rowid=?)"
+          }
+        ]
+      },
+      "storage": {
+        "file_bytes": 4626735104,
+        "allocated_bytes": 4581613568,
+        "free_pages": 11016,
+        "page_size": 4096
+      },
+      "writes": {
+        "hot": {
+          "n": 3,
+          "median_ms": 5.614574999999604,
+          "max_ms": 6.498245999995561,
+          "samples_ms": [
+            5.614574999999604,
+            6.498245999995561,
+            5.555674999995972
+          ]
+        },
+        "spread": {
+          "n": 3,
+          "median_ms": 6.841166999998677,
+          "max_ms": 15.282416000001831,
+          "samples_ms": [
+            15.282416000001831,
+            6.841166999998677,
+            6.112625000001572
+          ]
+        }
+      }
+    },
+    "after": {
+      "api": {
+        "old": {
+          "thread_id": 1,
+          "n": 5,
+          "median_ms": 8.092727000002924,
+          "max_ms": 13.536262000001443,
+          "samples_ms": [
+            13.536262000001443,
+            6.928420999996888,
+            8.092727000002924,
+            6.553078999997524,
+            9.435417000000598
+          ],
+          "bytes": 317353,
+          "replies": 300,
+          "activity": 100,
+          "response_sha256": "fc20dfc4956991eae810f699c9ad76d4b01931fdfc04fb1f82d51cf5db5f0b88"
+        },
+        "middle": {
+          "thread_id": 5000,
+          "n": 5,
+          "median_ms": 7.872103999994579,
+          "max_ms": 11.896436999995785,
+          "samples_ms": [
+            11.896436999995785,
+            7.872103999994579,
+            7.634680999995908,
+            7.529695000004722,
+            8.587933000002522
+          ],
+          "bytes": 328669,
+          "replies": 300,
+          "activity": 100,
+          "response_sha256": "a66d3db66184c0f40aa054e91ce538764aac4b044cb9b81f1869574206d6e7d4"
+        },
+        "newest": {
+          "thread_id": 10000,
+          "n": 5,
+          "median_ms": 7.9414749999996275,
+          "max_ms": 16.795734999999695,
+          "samples_ms": [
+            9.186811999999918,
+            7.505809999995108,
+            7.9414749999996275,
+            7.431962000002386,
+            16.795734999999695
+          ],
+          "bytes": 329471,
+          "replies": 300,
+          "activity": 100,
+          "response_sha256": "b2e74c16dbc6635ce0445f6861ac95af54e753c889f66bde5b66f8021a1b9207"
+        }
+      },
+      "plans": {
+        "old": [
+          {
+            "id": 6,
+            "parent": 0,
+            "notused": 61,
+            "detail": "SEARCH e USING INDEX event_thread (thread_id=?)"
+          },
+          {
+            "id": 13,
+            "parent": 0,
+            "notused": 45,
+            "detail": "SEARCH u USING INTEGER PRIMARY KEY (rowid=?)"
+          }
+        ],
+        "middle": [
+          {
+            "id": 6,
+            "parent": 0,
+            "notused": 61,
+            "detail": "SEARCH e USING INDEX event_thread (thread_id=?)"
+          },
+          {
+            "id": 13,
+            "parent": 0,
+            "notused": 45,
+            "detail": "SEARCH u USING INTEGER PRIMARY KEY (rowid=?)"
+          }
+        ],
+        "newest": [
+          {
+            "id": 6,
+            "parent": 0,
+            "notused": 61,
+            "detail": "SEARCH e USING INDEX event_thread (thread_id=?)"
+          },
+          {
+            "id": 13,
+            "parent": 0,
+            "notused": 45,
+            "detail": "SEARCH u USING INTEGER PRIMARY KEY (rowid=?)"
+          }
+        ]
+      },
+      "storage": {
+        "file_bytes": 4626735104,
+        "allocated_bytes": 4626735104,
+        "free_pages": 0,
+        "page_size": 4096
+      },
+      "writes": {
+        "hot": {
+          "n": 3,
+          "median_ms": 7.3064679999952205,
+          "max_ms": 7.549071000001277,
+          "samples_ms": [
+            7.549071000001277,
+            6.739747999999963,
+            7.3064679999952205
+          ]
+        },
+        "spread": {
+          "n": 3,
+          "median_ms": 150.2492409999977,
+          "max_ms": 154.0622580000054,
+          "samples_ms": [
+            154.0622580000054,
+            136.88682300000073,
+            150.2492409999977
+          ]
+        }
+      }
+    }
+  },
+  "counts": {
+    "threads": 10000,
+    "replies": 3000000,
+    "events": 3000000,
+    "notifications": 3000000
+  },
+  "targets": {
+    "old": 1,
+    "middle": 5000,
+    "newest": 10000
+  },
+  "pre_migration_storage": {
+    "file_bytes": 4626735104,
+    "allocated_bytes": 4581613568,
+    "free_pages": 11016,
+    "page_size": 4096
+  },
+  "migration_ms": 6907.974213000001,
+  "post_migration_storage": {
+    "file_bytes": 4626735104,
+    "allocated_bytes": 4626735104,
+    "free_pages": 0,
+    "page_size": 4096
+  },
+  "index_allocated_bytes": 45121536
+}
