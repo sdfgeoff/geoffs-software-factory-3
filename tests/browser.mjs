@@ -1,3 +1,4 @@
+import "./reading-browser.mjs";
 import "./work-queue-browser.mjs";
 import "./orchestration-browser.mjs";
 import { test } from "node:test";

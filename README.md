@@ -542,3 +542,23 @@ between buttons and Enter/Space to activate a view. Existing visible focus rings
 remain in place. Browser regression checks verify exclusive selection, matching
 rendered content, keyboard activation, and the automatic return to Discussion
 after posting a reply. Unknown stored work-view values fall back to Threads.
+
+### Conversation reading position
+
+Conversations open at the latest reply in oldest-to-newest order. Within the
+signed-in browser App session, each conversation and view remembers its scroll
+position. Refreshes and incoming replies preserve the visible reply while reading
+history; **Jump to latest** shows a count of new replies. At the bottom, new replies
+and image loading keep the latest content in view. The jump action moves keyboard
+focus to the reading area; sending a reply retains composer focus and reveals the
+saved reply only after its data arrives. Failed sends retain the draft and context.
+
+Search and inbox reply targets take precedence over remembered positions and are
+highlighted briefly. Entry links `?thread=<thread-id>&reply=<reply-id>` use the same
+positioning, including on refresh and after sign-in. This is an entry-only adapter;
+conversation link creation and in-app Back/Forward navigation are separate work.
+The scroll hook accepts `initialReplyId` through ThreadDetail so a future main-area
+layout/router can use the same behavior. Position memory clears when accounts
+change and does not add a backend unread-tracking state. Browser regressions at
+1440px and 390px cover multiple conversations, refreshes, delayed images, incoming
+replies, failed/successful posting and search/inbox/direct-link targeting.

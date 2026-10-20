@@ -1,3 +1,4 @@
+import useConversationScroll from "./useConversationScroll.jsx";
 import ReminderComposer from "./ReminderComposer.jsx";
 import { reminderTimeLabel } from "./reminder-time.mjs";
 import React, { useState, useEffect, useRef, useCallback } from "react";
@@ -567,6 +568,17 @@ function GlobalSearch({ onClose, onChoose, refreshKey }) {
   );
 }
 
+// Entry-only adapter for reply positioning; the navigation/layout ticket owns
+// link creation and in-app history. These IDs survive an ordinary sign-in.
+function conversationEntry() {
+  const params = new URLSearchParams(location.search);
+  const threadId = Number(params.get("thread")),
+    replyId = Number(params.get("reply"));
+  return {
+    threadId: Number.isSafeInteger(threadId) && threadId > 0 ? threadId : null,
+    replyId: Number.isSafeInteger(replyId) && replyId > 0 ? replyId : null,
+  };
+}
 function App() {
   const [data, setData] = useState(null),
     [auth, setAuth] = useState("loading"),
@@ -581,12 +593,13 @@ function App() {
     [search, setSearch] = useState(""),
     [assignee, setAssignee] = useState(""),
     [statusFilter, setStatusFilter] = useState(""),
-    [selectedId, setSelectedId] = useState(null),
+    [selectedId, setSelectedId] = useState(() => conversationEntry().threadId),
     [searchOpen, setSearchOpen] = useState(false),
     [detailVersion, setDetailVersion] = useState(0),
     [detailContext, setDetailContext] = useState({
       tab: "discussion",
       branchId: null,
+      replyId: conversationEntry().replyId,
     }),
     [searchTarget, setSearchTarget] = useState(null),
     [detail, setDetail] = useState(null),
@@ -600,6 +613,10 @@ function App() {
     [refreshKey, setRefreshKey] = useState(0);
   const toastTimer = useRef();
   const searchNavigation = useRef(0);
+  const readingPositions = useRef(new Map());
+  useEffect(() => {
+    readingPositions.current.clear();
+  }, [data?.user.id]);
   const sessionVersion = useRef(0);
   const notify = useCallback((message, error = false) => {
     clearTimeout(toastTimer.current);
@@ -664,7 +681,7 @@ function App() {
     };
   }, [auth, channelId, search, assignee, refreshKey]);
   useEffect(() => {
-    if (!selectedId) {
+    if (!selectedId || auth !== "signedIn") {
       setDetail(null);
       return;
     }
@@ -677,7 +694,7 @@ function App() {
     return () => {
       stale = true;
     };
-  }, [selectedId, refreshKey]);
+  }, [selectedId, refreshKey, auth]);
   useEffect(() => {
     if (page !== "inbox" || auth !== "signedIn") return;
     let stale = false;
@@ -767,8 +784,8 @@ function App() {
     if (view === "board") setModal({ type: "thread" });
     else document.getElementById("new-thread-message")?.focus();
   }
-  function openThread(id, tab = "discussion", branchId = null) {
-    setDetailContext({ tab, branchId });
+  function openThread(id, tab = "discussion", branchId = null, replyId = null) {
+    setDetailContext({ tab, branchId, replyId });
     setDetailVersion((version) => version + 1);
     setSelectedId(id);
     if (id !== selectedId) setDetail(null);
@@ -1485,7 +1502,13 @@ function App() {
                       await act("/inbox/read", "POST", { ids: [n.id] }).catch(
                         () => {},
                       );
-                      if (n.thread_id) openThread(n.thread_id);
+                      if (n.thread_id)
+                        openThread(
+                          n.thread_id,
+                          "discussion",
+                          null,
+                          n.payload.reply_id,
+                        );
                     }}
                   >
                     <Avatar
@@ -1701,8 +1724,7 @@ function App() {
               });
             } else if (result.thread_id) {
               setDetailVersion((version) => version + 1);
-              openThread(result.thread_id);
-              if (result.reply_id) setSearchTarget(`reply-${result.reply_id}`);
+              openThread(result.thread_id, "discussion", null, result.reply_id);
             } else if (result.kind === "channel") go("work", result.channel_id);
             else if (result.kind === "person") {
               go("team");
@@ -1733,6 +1755,8 @@ function App() {
                 thread={detail}
                 initialTab={detailContext.tab}
                 initialBranchId={detailContext.branchId}
+                initialReplyId={detailContext.replyId}
+                readingPositions={readingPositions.current}
                 refreshKey={refreshKey}
                 refresh={refresh}
                 data={data}
@@ -1933,13 +1957,21 @@ function ThreadDetail({
   edit,
   initialTab = "discussion",
   initialBranchId,
+  initialReplyId,
+  readingPositions,
   refreshKey,
   refresh,
 }) {
   const [tab, setTab] = useState(initialTab),
     [editing, setEditing] = useState(null),
     [editBody, setEditBody] = useState("");
-  const end = useRef();
+  const reading = useConversationScroll({
+    threadId: t.id,
+    tab,
+    replyIds: t.replies.map((r) => r.id),
+    targetReplyId: initialReplyId,
+    positions: readingPositions,
+  });
   useEffect(() => {
     const key = (e) => {
       if (e.key === "Tab") {
@@ -2052,169 +2084,187 @@ function ThreadDetail({
           </select>
         </label>
       </div>
-      <div className="thread-scroll">
-        <ThreadWorkControl
-          key={t.id}
-          api={api}
-          thread={t}
-          data={data}
-          refreshKey={refreshKey}
-          onDone={refresh}
-        />
-        <div className="thread-description">
-          <RichText>{t.body}</RichText>
-          <Attachments files={t.attachments} />
-          {!t.body && !t.attachments?.length && (
-            <p className="muted">No description yet.</p>
-          )}
-        </div>
-        <div
-          className="discussion-tabs"
-          role="group"
-          aria-label="Conversation view"
-        >
-          <button
-            className={tab === "discussion" ? "selected" : ""}
-            aria-pressed={tab === "discussion"}
-            onClick={() => setTab("discussion")}
-          >
-            Discussion <span>{t.replies.length}</span>
-          </button>
-          <button
-            className={tab === "activity" ? "selected" : ""}
-            aria-pressed={tab === "activity"}
-            onClick={() => setTab("activity")}
-          >
-            Activity
-          </button>
-          <button
-            className={tab === "branches" ? "selected" : ""}
-            aria-pressed={tab === "branches"}
-            onClick={() => setTab("branches")}
-          >
-            Branches
-          </button>
-        </div>
-        {tab === "branches" ? (
-          <ThreadBranches
+      <div
+        className="thread-scroll"
+        ref={reading.viewport}
+        tabIndex={-1}
+        role="region"
+        aria-label="Conversation reading area"
+      >
+        <div className="thread-scroll-content" ref={reading.content}>
+          <ThreadWorkControl
             key={t.id}
             api={api}
+            thread={t}
             data={data}
-            threadId={t.id}
-            initialBranchId={initialBranchId}
-            refreshKey={t.events?.length}
+            refreshKey={refreshKey}
+            onDone={refresh}
           />
-        ) : tab === "discussion" ? (
-          <div className="replies">
-            {t.replies.map((r) => (
-              <article className="reply" id={`reply-${r.id}`} key={r.id}>
-                <Avatar user={data.users.find((u) => u.id === r.author_id)} />
-                <div className="reply-content">
-                  <header>
-                    <strong>{r.author_name}</strong>
-                    {r.author_kind === "agent" && (
-                      <span className="ai-label">AI</span>
-                    )}
-                    <time title={fullDate(r.created_at)}>
-                      {timeAgo(r.created_at)}
-                      {r.edited_at ? " · edited" : ""}
-                    </time>
-                    {(r.author_id === data.user.id || data.user.admin) && (
-                      <button
-                        className="icon-button"
-                        aria-label={`Edit reply by ${r.author_name}`}
-                        onClick={() => {
-                          setEditing(r.id);
-                          setEditBody(r.body);
+          <div className="thread-description">
+            <RichText>{t.body}</RichText>
+            <Attachments files={t.attachments} />
+            {!t.body && !t.attachments?.length && (
+              <p className="muted">No description yet.</p>
+            )}
+          </div>
+          <div
+            className="discussion-tabs"
+            role="group"
+            aria-label="Conversation view"
+          >
+            <button
+              className={tab === "discussion" ? "selected" : ""}
+              aria-pressed={tab === "discussion"}
+              onClick={() => setTab("discussion")}
+            >
+              Discussion <span>{t.replies.length}</span>
+            </button>
+            <button
+              className={tab === "activity" ? "selected" : ""}
+              aria-pressed={tab === "activity"}
+              onClick={() => setTab("activity")}
+            >
+              Activity
+            </button>
+            <button
+              className={tab === "branches" ? "selected" : ""}
+              aria-pressed={tab === "branches"}
+              onClick={() => setTab("branches")}
+            >
+              Branches
+            </button>
+          </div>
+          {tab === "branches" ? (
+            <ThreadBranches
+              key={t.id}
+              api={api}
+              data={data}
+              threadId={t.id}
+              initialBranchId={initialBranchId}
+              refreshKey={t.events?.length}
+            />
+          ) : tab === "discussion" ? (
+            <div className="replies">
+              {t.replies.map((r) => (
+                <article className="reply" id={`reply-${r.id}`} key={r.id}>
+                  <Avatar user={data.users.find((u) => u.id === r.author_id)} />
+                  <div className="reply-content">
+                    <header>
+                      <strong>{r.author_name}</strong>
+                      {r.author_kind === "agent" && (
+                        <span className="ai-label">AI</span>
+                      )}
+                      <time title={fullDate(r.created_at)}>
+                        {timeAgo(r.created_at)}
+                        {r.edited_at ? " · edited" : ""}
+                      </time>
+                      {(r.author_id === data.user.id || data.user.admin) && (
+                        <button
+                          className="icon-button"
+                          aria-label={`Edit reply by ${r.author_name}`}
+                          onClick={() => {
+                            setEditing(r.id);
+                            setEditBody(r.body);
+                          }}
+                        >
+                          <Pencil size={13} />
+                        </button>
+                      )}
+                    </header>
+                    {editing === r.id ? (
+                      <form
+                        className="reply-edit"
+                        onSubmit={async (e) => {
+                          e.preventDefault();
+                          try {
+                            await act(`/replies/${r.id}`, "PATCH", {
+                              body: editBody,
+                            });
+                            setEditing(null);
+                          } catch {}
                         }}
                       >
-                        <Pencil size={13} />
-                      </button>
+                        <textarea
+                          value={editBody}
+                          onChange={(e) => setEditBody(e.target.value)}
+                        />
+                        <div>
+                          <button
+                            type="button"
+                            className="button"
+                            onClick={() => setEditing(null)}
+                          >
+                            Cancel
+                          </button>
+                          <button className="button primary">Save</button>
+                        </div>
+                      </form>
+                    ) : (
+                      <RichText>{r.body}</RichText>
                     )}
-                  </header>
-                  {editing === r.id ? (
-                    <form
-                      className="reply-edit"
-                      onSubmit={async (e) => {
-                        e.preventDefault();
-                        try {
-                          await act(`/replies/${r.id}`, "PATCH", {
-                            body: editBody,
-                          });
-                          setEditing(null);
-                        } catch {}
-                      }}
-                    >
-                      <textarea
-                        value={editBody}
-                        onChange={(e) => setEditBody(e.target.value)}
-                      />
-                      <div>
-                        <button
-                          type="button"
-                          className="button"
-                          onClick={() => setEditing(null)}
-                        >
-                          Cancel
-                        </button>
-                        <button className="button primary">Save</button>
-                      </div>
-                    </form>
-                  ) : (
-                    <RichText>{r.body}</RichText>
-                  )}
-                  <Attachments files={r.attachments} />
+                    <Attachments files={r.attachments} />
+                  </div>
+                </article>
+              ))}
+              {!t.replies.length && (
+                <div className="discussion-empty">
+                  <MessageSquare size={20} />
+                  <p>
+                    There’s room for your perspective.
+                    <br />
+                    <span>Reply, or mention a teammate to bring them in.</span>
+                  </p>
                 </div>
-              </article>
-            ))}
-            {!t.replies.length && (
-              <div className="discussion-empty">
-                <MessageSquare size={20} />
-                <p>
-                  There’s room for your perspective.
-                  <br />
-                  <span>Reply, or mention a teammate to bring them in.</span>
-                </p>
-              </div>
-            )}
-            <div ref={end} />
-          </div>
-        ) : (
-          <div className="activity-list">
-            {t.activity.map((e) => (
-              <div className="activity-item" key={e.id}>
-                <span className="activity-dot" />
-                <div>
-                  <strong>{e.actor_name}</strong>{" "}
-                  {e.type === "thread.created"
-                    ? "started this thread"
-                    : e.type === "reply.created"
-                      ? "posted a reply"
-                      : e.type === "reply.edited"
-                        ? "edited a reply"
-                        : "updated " +
-                          Object.keys(e.payload.changes || {})
-                            .map((k) => k.replace("_id", ""))
-                            .join(", ")}
-                  <time>{fullDate(e.created_at)}</time>
+              )}
+            </div>
+          ) : (
+            <div className="activity-list">
+              {t.activity.map((e) => (
+                <div className="activity-item" key={e.id}>
+                  <span className="activity-dot" />
+                  <div>
+                    <strong>{e.actor_name}</strong>{" "}
+                    {e.type === "thread.created"
+                      ? "started this thread"
+                      : e.type === "reply.created"
+                        ? "posted a reply"
+                        : e.type === "reply.edited"
+                          ? "edited a reply"
+                          : "updated " +
+                            Object.keys(e.payload.changes || {})
+                              .map((k) => k.replace("_id", ""))
+                              .join(", ")}
+                    <time>{fullDate(e.created_at)}</time>
+                  </div>
                 </div>
-              </div>
-            ))}
-          </div>
-        )}
+              ))}
+            </div>
+          )}
+        </div>
       </div>
+      {reading.away && (
+        <button
+          className="thread-jump"
+          onClick={() => reading.jumpToLatest(true)}
+        >
+          {reading.newReplies > 0 && (
+            <span aria-live="polite">
+              {reading.newReplies} new{" "}
+              {reading.newReplies === 1 ? "reply" : "replies"} ·{" "}
+            </span>
+          )}
+          Jump to latest
+        </button>
+      )}
       <ReplyComposer
         key={t.id}
         thread={t}
         users={data.users}
         act={act}
         notify={notify}
-        afterPost={() => {
+        afterPost={(saved) => {
+          reading.revealPosted(saved.id);
           setTab("discussion");
-          setTimeout(
-            () => end.current?.scrollIntoView({ behavior: "smooth" }),
-            200,
-          );
         }}
       />
     </>

@@ -3786,3 +3786,24 @@ code {
   display: block;
   white-space: pre-wrap;
 }
+.thread-scroll {
+  overflow-anchor: none;
+}
+.thread-scroll-content {
+  display: flow-root;
+}
+.thread-jump {
+  align-self: center;
+  flex-shrink: 0;
+  margin: 6px 14px;
+  padding: 9px 15px;
+  border: 1px solid #7a926d;
+  border-radius: 20px;
+  color: #285237;
+  background: #edf3e7;
+  font-size: 12px;
+}
+.thread-scroll:focus-visible {
+  outline: 2px solid #79a893;
+  outline-offset: -3px;
+}
