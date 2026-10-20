@@ -1,16 +1,10 @@
 import { replyBodyCandidates, replyThreadCandidates } from "./search-index.mjs";
-import { z } from "zod";
+import { httpRequests } from "../shared/requests.mjs";
 
 // Search published board content and the caller's private reminders only. Selecting
 // explicit fields keeps credentials out; runtime log content requires admin access.
 export function searchPlatform(db, user, input) {
-  const { q, limit, offset } = z
-    .object({
-      q: z.string().trim().max(200).default(""),
-      limit: z.coerce.number().int().min(1).max(100).default(30),
-      offset: z.coerce.number().int().min(0).max(1000000).default(0),
-    })
-    .parse(input);
+  const { q, limit, offset } = httpRequests.search.parse(input);
   if (!q) return { results: [], has_more: false };
   const needed = limit + offset + 1;
   const candidateIds = new Set(replyBodyCandidates(db, q, needed));

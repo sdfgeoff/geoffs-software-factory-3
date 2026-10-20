@@ -1,3 +1,8 @@
+import {
+  httpRequests as requests,
+  requestId,
+  channelName,
+} from "../shared/requests.mjs";
 import { publicHttpResult } from "../shared/results.mjs";
 import { httpError } from "../shared/errors.mjs";
 import { createRefreshJournal } from "./refresh.mjs";
@@ -23,15 +28,8 @@ import {
   now,
 } from "./db.mjs";
 
-const username = z
-  .string()
-  .regex(
-    /^[a-z][a-z0-9_-]{1,39}$/,
-    "Use 2–40 lowercase letters, numbers, underscores or hyphens.",
-  );
-const text = z.string().max(50000);
-const positive = z.coerce.number().int().positive();
-const attachmentIds = z.array(z.string().uuid()).max(10).default([]);
+const username = channelName;
+const positive = requestId();
 const openingTitle = (body, attachments) => {
   const line = body
     .split(/\r?\n/)
@@ -401,14 +399,7 @@ export function createApp({
     runSearch(req, res, next, "global", req.query),
   );
   app.post("/api/notification-schedules", (req, res) => {
-    const input = z
-      .object({
-        message: z.string().trim().min(1).max(50000),
-        when: z.string().min(1).max(100),
-        repeat: z.string().min(1).max(100).optional(),
-      })
-      .strict()
-      .parse(req.body);
+    const input = requests.schedule.parse(req.body);
     mutate(req, res, () => {
       let schedule;
       try {
@@ -515,12 +506,7 @@ export function createApp({
   });
   app.post("/api/channels", (req, res) =>
     mutate(req, res, () => {
-      const input = z
-        .object({
-          name: username,
-          description: z.string().max(1000).default(""),
-        })
-        .parse(req.body);
+      const input = requests.createChannel.parse(req.body);
       return db
         .prepare(
           "INSERT INTO channels(name,description,created_by,created_at) VALUES(?,?,?,?) RETURNING *",
@@ -531,13 +517,7 @@ export function createApp({
   app.patch("/api/channels/:id", (req, res) =>
     mutate(req, res, () => {
       const old = getChannel(req.params.id);
-      const input = z
-        .object({
-          name: username.optional(),
-          description: z.string().max(1000).optional(),
-          archived: z.boolean().optional(),
-        })
-        .parse(req.body);
+      const input = requests.updateChannel.parse(req.body);
       return db
         .prepare(
           "UPDATE channels SET name=?,description=?,archived=? WHERE id=? RETURNING *",
@@ -553,9 +533,7 @@ export function createApp({
   app.put("/api/channels/:id/subscription", (req, res) =>
     mutate(req, res, () => {
       const c = getChannel(req.params.id);
-      const { subscribed } = z
-        .object({ subscribed: z.boolean() })
-        .parse(req.body);
+      const { subscribed } = requests.subscription.parse(req.body);
       const wasSubscribed = !!db
         .prepare(
           "SELECT 1 FROM channel_subscriptions WHERE channel_id=? AND user_id=?",
@@ -612,16 +590,7 @@ export function createApp({
   });
   app.post("/api/threads", (req, res) =>
     mutate(req, res, () => {
-      const input = z
-        .object({
-          channel_id: positive,
-          title: z.string().trim().max(240).optional(),
-          body: text.default(""),
-          attachment_ids: attachmentIds,
-          status_id: positive.optional(),
-          assignee_id: positive.nullable().optional(),
-        })
-        .parse(req.body);
+      const input = requests.createThread.parse(req.body);
       if (!input.title && !input.body.trim() && !input.attachment_ids.length)
         fail(400, "Write a message or add an attachment");
       const attachments = input.attachment_ids.map(
@@ -687,15 +656,7 @@ export function createApp({
   app.patch("/api/threads/:id", (req, res) =>
     mutate(req, res, () => {
       const t = getThread(req.params.id);
-      const input = z
-        .object({
-          title: z.string().trim().min(1).max(240).optional(),
-          body: text.optional(),
-          status_id: positive.optional(),
-          assignee_id: positive.nullable().optional(),
-          expected_updated_at: z.string().optional(),
-        })
-        .parse(req.body);
+      const input = requests.updateThread.parse(req.body);
       if (
         input.expected_updated_at &&
         input.expected_updated_at !== t.updated_at
@@ -769,9 +730,7 @@ export function createApp({
   app.put("/api/threads/:id/subscription", (req, res) =>
     mutate(req, res, () => {
       const t = getThread(req.params.id);
-      const { subscribed } = z
-        .object({ subscribed: z.boolean() })
-        .parse(req.body);
+      const { subscribed } = requests.subscription.parse(req.body);
       db.prepare(
         "INSERT INTO thread_subscriptions VALUES(?,?,?) ON CONFLICT(thread_id,user_id) DO UPDATE SET subscribed=excluded.subscribed",
       ).run(t.id, req.user.id, +subscribed);
@@ -781,12 +740,7 @@ export function createApp({
   app.post("/api/threads/:id/replies", (req, res) =>
     mutate(req, res, () => {
       const t = getThread(req.params.id);
-      const input = z
-        .object({
-          body: text.default(""),
-          attachment_ids: attachmentIds,
-        })
-        .parse(req.body);
+      const input = requests.postReply.parse(req.body);
       if (!input.body.trim() && !input.attachment_ids.length)
         fail(400, "Write a reply or add an attachment");
       for (const id of input.attachment_ids)
@@ -834,7 +788,7 @@ export function createApp({
           .get(positive.parse(req.params.id)) || fail(404, "Reply not found");
       if (r.author_id !== req.user.id && !req.user.admin)
         fail(403, "Only the author or admin can edit this reply");
-      const { body } = z.object({ body: text }).parse(req.body);
+      const { body } = requests.editReply.parse(req.body);
       if (
         !body.trim() &&
         !db.prepare("SELECT 1 FROM attachments WHERE reply_id=?").get(r.id)
@@ -938,9 +892,7 @@ export function createApp({
   );
   app.post("/api/inbox/read", (req, res) =>
     mutate(req, res, () => {
-      const { ids } = z
-        .object({ ids: z.array(positive).max(200).optional() })
-        .parse(req.body);
+      const { ids } = requests.markRead.parse(req.body);
       if (ids)
         for (const id of ids)
           db.prepare(

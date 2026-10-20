@@ -1,9 +1,14 @@
 import { ResultMcpServer } from "./mcp-results.mjs";
 import { publicResult, toolOutput } from "../shared/results.mjs";
-import { threadListFields } from "../shared/requests.mjs";
 import { errorResult, httpError } from "../shared/errors.mjs";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
+import {
+  mcpRequests as requests,
+  requestId,
+  attachmentId,
+  threadListFields,
+} from "../shared/requests.mjs";
 import { readFile, writeFile, mkdir, realpath } from "node:fs/promises";
 import { resolve, relative, dirname, isAbsolute } from "node:path";
 import { createApi } from "./api.mjs";
@@ -28,7 +33,8 @@ async function workspacePath(file, write = false) {
   return resolved;
 }
 const server = new ResultMcpServer({ name: "threadwork", version: "0.1.0" });
-const id = z.number().int().positive();
+const id = requestId({ coerce: false });
+const listFields = threadListFields({ coerce: false });
 const result = (name, value) => {
   const output = publicResult(name, value);
   return {
@@ -64,13 +70,13 @@ tool(
 tool(
   "set_work_notifications",
   "Opt in/out of durable notifications for eligible Ready work and submitted reviews in subscribed channels. Review notifications require review capability. Enabling also checks existing queued work; it never forces a claim or reply.",
-  { notify_ready_work: z.boolean(), notify_ready_reviews: z.boolean() },
+  requests.workPreferences.shape,
   (body) => api("/work-preferences", { method: "PUT", body }),
 );
 tool(
   "claim_ticket",
   "Atomically claim an eligible Ready ticket (or resume your reserved requested fixes). Sets ownership and In progress. Only one active work/review claim per account; conflicts return an error without stealing work.",
-  { thread_id: id, expected_updated_at: z.string().optional() },
+  { thread_id: id, ...requests.claimTicket.shape },
   ({ thread_id, ...body }) =>
     api(`/threads/${thread_id}/claim`, { method: "POST", body }),
 );
@@ -84,14 +90,14 @@ tool(
 tool(
   "submit_ticket_work",
   "Submit non-code ticket outputs for review with a summary and links to evidence. Releases your active capacity while preserving assignment. For code, submit each branch with submit_branch_review; no merge happens automatically.",
-  { thread_id: id, summary: z.string().max(50000).optional() },
+  { thread_id: id, ...requests.submitWork.shape },
   ({ thread_id, ...body }) =>
     api(`/threads/${thread_id}/submit-work`, { method: "POST", body }),
 );
 tool(
   "submit_branch_review",
   "Submit the exact current branch commit for review by eligible teammates in linked tickets' channels. Releases implementation capacity while ownership stays with the worker. Pushes require renewed submission/review. Approval does not merge.",
-  { branch_id: id, commit: z.string().regex(/^[a-f0-9]{40}$/) },
+  { branch_id: id, ...requests.branchRevision.shape },
   ({ branch_id, ...body }) =>
     api(`/branches/${branch_id}/submit-review`, {
       method: "POST",
@@ -102,7 +108,7 @@ tool(
 tool(
   "claim_branch_review",
   "Atomically reserve review of a submitted exact branch revision. Requires review capability and membership in a linked channel; excludes the worker/contributors and any other active claim.",
-  { branch_id: id, commit: z.string().regex(/^[a-f0-9]{40}$/) },
+  { branch_id: id, ...requests.branchRevision.shape },
   ({ branch_id, ...body }) =>
     api(`/branches/${branch_id}/claim-review`, {
       method: "POST",
@@ -113,7 +119,7 @@ tool(
 tool(
   "release_branch_review",
   "Release your branch review claim without approving or requesting changes; other eligible reviewers can claim it.",
-  { branch_id: id, commit: z.string().regex(/^[a-f0-9]{40}$/) },
+  { branch_id: id, ...requests.branchRevision.shape },
   ({ branch_id, ...body }) =>
     api(`/branches/${branch_id}/release-review`, {
       method: "POST",
@@ -124,26 +130,21 @@ tool(
 tool(
   "claim_ticket_review",
   "Atomically reserve a submitted non-code ticket review. Read the ticket and its output/evidence before deciding.",
-  { thread_id: id, submission_id: id },
+  { thread_id: id, ...requests.ticketSubmission.shape },
   ({ thread_id, ...body }) =>
     api(`/threads/${thread_id}/claim-review`, { method: "POST", body }),
 );
 tool(
   "release_ticket_review",
   "Release your non-code ticket review claim without a decision so another eligible reviewer can pick it up.",
-  { thread_id: id, submission_id: id },
+  { thread_id: id, ...requests.ticketSubmission.shape },
   ({ thread_id, ...body }) =>
     api(`/threads/${thread_id}/release-review`, { method: "POST", body }),
 );
 tool(
   "review_ticket",
   "Review a specific non-code ticket submission. Approval completes the ticket; requested changes keep it reserved for the original worker. Requires a valid review claim/capability; self review is forbidden. Code branch approvals must use review_branch.",
-  {
-    thread_id: id,
-    submission_id: id,
-    decision: z.enum(["approved", "changes_requested"]),
-    body: z.string().max(50000).optional(),
-  },
+  { thread_id: id, ...requests.reviewTicket.shape },
   ({ thread_id, ...body }) =>
     api(`/threads/${thread_id}/reviews`, { method: "POST", body }),
 );
@@ -175,7 +176,7 @@ tool(
 tool(
   "remove_branch_dependency",
   "Remove a merge dependency from a branch you own.",
-  { branch_id: id, depends_on_id: id },
+  { branch_id: id, ...requests.branchDependency.shape },
   ({ branch_id, depends_on_id }) =>
     api(`/branches/${branch_id}/dependencies/${depends_on_id}`, {
       method: "DELETE",
@@ -184,12 +185,7 @@ tool(
 tool(
   "create_branch",
   "Create a managed branch you own in a registered repository. Links to any number of tickets; no plan approval required. Use prepare_branch_workspace to work on it.",
-  {
-    repository_id: id,
-    name: z.string().min(1).max(200),
-    thread_ids: z.array(id).optional(),
-    base: z.string().optional(),
-  },
+  { repository_id: id, ...requests.createBranch.shape },
   ({ repository_id, ...body }) =>
     api(`/repositories/${repository_id}/branches`, {
       method: "POST",
@@ -200,7 +196,7 @@ tool(
 tool(
   "link_branch",
   "Link an existing managed branch to another ticket.",
-  { branch_id: id, thread_id: id },
+  { branch_id: id, ...requests.linkBranch.shape },
   ({ branch_id, ...body }) =>
     api(`/branches/${branch_id}/link`, {
       method: "POST",
@@ -211,7 +207,7 @@ tool(
 tool(
   "handoff_branch",
   "Explicitly transfer branch write ownership to another eligible worker. Others may still fetch and review.",
-  { branch_id: id, owner_id: id },
+  { branch_id: id, ...requests.handoffBranch.shape },
   ({ branch_id, ...body }) =>
     api(`/branches/${branch_id}/handoff`, {
       method: "POST",
@@ -222,7 +218,7 @@ tool(
 tool(
   "add_branch_dependency",
   "Require another managed branch to merge before this branch can merge.",
-  { branch_id: id, depends_on_id: id },
+  { branch_id: id, ...requests.branchDependency.shape },
   ({ branch_id, ...body }) =>
     api(`/branches/${branch_id}/dependencies`, {
       method: "POST",
@@ -233,17 +229,7 @@ tool(
 tool(
   "review_branch",
   "Record a review of the exact current commit. Requires explicit review capability; you cannot approve your own work. May escalate to human approval. Approval notifies the worker and never automatically merges.",
-  {
-    branch_id: id,
-    commit: z.string().regex(/^[a-f0-9]{40,64}$/),
-    target_commit: z
-      .string()
-      .regex(/^[a-f0-9]{40}$/)
-      .optional(),
-    decision: z.enum(["approved", "changes_requested"]),
-    body: z.string().max(50000).optional(),
-    require_human: z.boolean().optional(),
-  },
+  { branch_id: id, ...requests.reviewBranch.shape },
   ({ branch_id, ...body }) =>
     api(`/branches/${branch_id}/reviews`, {
       method: "POST",
@@ -280,7 +266,6 @@ tool(
     });
   },
 );
-const listFields = threadListFields({ coerce: false });
 tool(
   "list_threads",
   "List work items newest first by creation time and ID. Legacy calls return an array of up to 500 items using offset. Set paged=true for {items,total,statusCounts,older,newer}; limit defaults to 50 (1–100). Pass older as before or newer as after, keeping filters unchanged. Paging-only arguments require paged=true; offset cannot be combined with paging, and before/after are mutually exclusive. Totals and statusCounts describe all matching items. Text search is literal.",
@@ -329,9 +314,9 @@ tool(
   "search_platform",
   "Search all channels (including archived), threads, replies, registered repository names, managed branches, people/agent roles, published attachment filenames, and your private reminders. Literal text search; file contents are excluded. Runtime logs require admin access. Paginate with offset and limit.",
   {
-    query: z.string().max(200),
-    limit: z.number().int().min(1).max(100).optional(),
-    offset: z.number().int().min(0).max(1000000).optional(),
+    query: requests.search.shape.q.removeDefault(),
+    limit: requests.search.shape.limit,
+    offset: requests.search.shape.offset,
   },
   ({ query, ...options }) =>
     api("/search?" + new URLSearchParams({ q: query, ...options })),
@@ -345,77 +330,54 @@ tool(
 tool(
   "create_thread",
   "Create a work item. This explicitly posts to the board. Title is optional and generated from body or attachment filename. Upload files first and pass attachment_ids. Use @username mentions. You are automatically subscribed.",
-  {
-    channel_id: id,
-    title: z.string().max(240).optional(),
-    body: z.string().optional(),
-    attachment_ids: z.array(z.string().uuid()).max(10).optional(),
-    status_id: id.optional(),
-    assignee_id: id.optional(),
-  },
+  requests.createThread.shape,
   (args) => api("/threads", { method: "POST", body: args }),
 );
 tool(
   "update_thread",
   "Edit title/description, change status, or explicitly assign/unassign a work item. Use claim_ticket for Ready work pickup; assignment must not steal another worker's claim.",
-  {
-    thread_id: id,
-    title: z.string().optional(),
-    body: z.string().optional(),
-    status_id: id.optional(),
-    assignee_id: id.nullable().optional(),
-    expected_updated_at: z.string().optional(),
-  },
+  { thread_id: id, ...requests.updateThread.shape },
   ({ thread_id, ...body }) =>
     api(`/threads/${thread_id}`, { method: "PATCH", body }),
 );
 tool(
   "post_reply",
   "Explicitly post a reply to a thread. Posting is optional; your final response is never published. Upload files first and pass attachment_ids.",
-  {
-    thread_id: id,
-    body: z.string().default(""),
-    attachment_ids: z.array(z.string()).optional(),
-  },
+  { thread_id: id, ...requests.postReply.shape },
   ({ thread_id, ...body }) =>
     api(`/threads/${thread_id}/replies`, { method: "POST", body }),
 );
 tool(
   "edit_reply",
   "Edit your own reply. Existing attachments remain attached.",
-  { reply_id: id, body: z.string() },
+  { reply_id: id, ...requests.editReply.shape },
   ({ reply_id, ...body }) =>
     api(`/replies/${reply_id}`, { method: "PATCH", body }),
 );
 tool(
   "create_channel",
   "Create a channel/epic visible to everyone.",
-  { name: z.string(), description: z.string().optional() },
+  requests.createChannel.shape,
   (body) => api("/channels", { method: "POST", body }),
 );
 tool(
   "update_channel",
   "Rename a channel, edit its description, archive or reopen it.",
-  {
-    channel_id: id,
-    name: z.string().optional(),
-    description: z.string().optional(),
-    archived: z.boolean().optional(),
-  },
+  { channel_id: id, ...requests.updateChannel.shape },
   ({ channel_id, ...body }) =>
     api(`/channels/${channel_id}`, { method: "PATCH", body }),
 );
 tool(
   "subscribe_channel",
   "Subscribe to new threads in a channel (which will wake you), or unsubscribe.",
-  { channel_id: id, subscribed: z.boolean() },
+  { channel_id: id, ...requests.subscription.shape },
   ({ channel_id, ...body }) =>
     api(`/channels/${channel_id}/subscription`, { method: "PUT", body }),
 );
 tool(
   "subscribe_thread",
   "Subscribe or mute a thread. Interacting subscribes you unless you explicitly muted it.",
-  { thread_id: id, subscribed: z.boolean() },
+  { thread_id: id, ...requests.subscription.shape },
   ({ thread_id, ...body }) =>
     api(`/threads/${thread_id}/subscription`, { method: "PUT", body }),
 );
@@ -428,17 +390,13 @@ tool(
 tool(
   "mark_notifications_read",
   "Mark selected notifications read, or all if ids is omitted. Does not suppress worker delivery.",
-  { ids: z.array(id).optional() },
+  requests.markRead.shape,
   (body) => api("/inbox/read", { method: "POST", body }),
 );
 tool(
   "schedule_notification",
   'Schedule a private notification for yourself. when: ISO 8601 with timezone (e.g. 2027-01-01T09:00:00Z) or "in one hour"/"in 30 minutes". Optional repeat: "every 2 hours" (seconds/minutes/hours/days/weeks, up to 365 days). Recurrence uses fixed elapsed intervals. Overdue occurrences coalesce after downtime. Returns the normalized UTC due_at.',
-  {
-    message: z.string().min(1).max(50000),
-    when: z.string(),
-    repeat: z.string().optional(),
-  },
+  requests.schedule.shape,
   (body) => api("/notification-schedules", { method: "POST", body }),
 );
 tool(
@@ -472,7 +430,7 @@ tool(
 tool(
   "download_attachment",
   "Download an attachment to a new destination file inside your workspace. The parent directory must already exist; existing files are never overwritten. Accepts workspace-relative or absolute paths (for example, downloads/report.txt). Read the saved file using your normal tools.",
-  { attachment_id: z.string().uuid(), path: z.string() },
+  { attachment_id: attachmentId, path: z.string() },
   async ({ attachment_id, path }) => {
     const safe = await workspacePath(path, true);
     const response = await api(`/attachments/${attachment_id}`, { raw: true });
@@ -488,7 +446,7 @@ server.registerTool(
   {
     description:
       "Inspect an image attached to a reply (PNG, JPEG, GIF or WebP).",
-    inputSchema: { attachment_id: z.string().uuid() },
+    inputSchema: { attachment_id: attachmentId },
     outputSchema: toolOutput("view_image_attachment"),
   },
   async ({ attachment_id }) => {
@@ -526,7 +484,7 @@ server.registerTool(
 tool(
   "delete_unposted_attachment",
   "Delete one of your uploaded files before it is attached to a reply.",
-  { attachment_id: z.string().uuid() },
+  { attachment_id: attachmentId },
   ({ attachment_id }) =>
     api(`/attachments/${attachment_id}`, { method: "DELETE" }),
 );

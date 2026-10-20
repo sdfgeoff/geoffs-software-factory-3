@@ -5,6 +5,7 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm ci --omit=dev
 COPY agent ./agent
+COPY shared ./shared
 RUN mkdir -p /state/workspace /state/codex /state/home /state/browser && chown -R node:node /state
 USER node
 ENV NODE_ENV=production AGENT_DATA_DIR=/state AGENT_WORKSPACE=/state/workspace CODEX_HOME=/state/codex HOME=/state/home DISPLAY=:99 XDG_RUNTIME_DIR=/tmp/threadwork-runtime THREADWORK_DESKTOP=true

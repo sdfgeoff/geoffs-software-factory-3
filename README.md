@@ -750,3 +750,8 @@ can still require scans, and overload/deadline failures return 503 with guidance
 The first upgrade builds the index before listening and needs extra database/WAL
 space. Back up before upgrading and allow a maintenance window for large existing
 databases. See [search migration costs, local latency budgets and reproduction](docs/benchmarks/indexed-search.md).
+
+Shared HTTP/MCP request validation and the complete existing tool mapping are
+listed in [Board request contracts](docs/request-contracts.md). The document
+also records transport coercion, local adapters, preserved legacy list behavior,
+and intentional MCP input-schema corrections.
