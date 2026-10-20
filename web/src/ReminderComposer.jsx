@@ -40,7 +40,6 @@ export default function ReminderComposer({
   return (
     <Dialog
       title="New reminder"
-      subtitle="A private nudge, right when you need it."
       initialFocus="textarea"
       onClose={() => {
         if (!submitting.current) onClose();

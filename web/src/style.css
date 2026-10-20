@@ -4267,7 +4267,7 @@ code {
 }
 .activity-event-preview {
   font-family: monospace;
-  color: var(--text);
+  color: inherit;
   white-space: pre-wrap;
 }
 .activity-associations {
@@ -4338,4 +4338,76 @@ code {
   padding: 10px;
   background: #f6f0de;
   border-radius: 5px;
+}
+
+/* Quiet page chrome; operational guidance is available beside its action. */
+.context-help {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.6;
+  margin: 10px 0;
+}
+.context-help summary {
+  cursor: pointer;
+  width: fit-content;
+  color: inherit;
+}
+.context-help summary:focus-visible {
+  outline: 2px solid var(--green);
+  outline-offset: 3px;
+}
+.context-help p {
+  margin: 8px 0;
+  max-width: 65ch;
+}
+.formatting-help {
+  margin: 0;
+  position: relative;
+}
+.formatting-help p {
+  max-width: 38ch;
+}
+.agent-card-top,
+.agent-card-footer {
+  justify-content: flex-end;
+}
+.work-order {
+  color: var(--muted);
+  font-size: 12px;
+  margin: 0 0 12px;
+}
+.login-page {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100dvh;
+  padding: 24px;
+}
+.login-page .login-form {
+  padding: 0;
+  min-height: 0;
+  width: 100%;
+  max-width: 380px;
+}
+.login-page .login-inner {
+  width: 100%;
+  max-width: none;
+}
+.login-page .login-brand {
+  color: inherit;
+  margin: 0 0 36px;
+  padding: 0;
+}
+.login-page h1 {
+  font-size: 28px;
+  margin: 0 0 24px;
+}
+.login-page .login-help {
+  font-size: 12px;
+  line-height: 1.6;
+}
+@media (max-width: 600px) {
+  .login-page {
+    padding: 24px;
+  }
 }
