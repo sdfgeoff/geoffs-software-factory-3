@@ -3,6 +3,45 @@ import { join } from "node:path";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
+// Keep SCP-style paths unchanged: Git interprets them relative to the SSH
+// account's home, unlike an absolute ssh:// URL path.
+export function validateRepositoryUrl(value) {
+  const invalid = (message) => {
+    throw Object.assign(new Error(message), { status: 400 });
+  };
+  if (/[\x00-\x1f\x7f]/.test(value))
+    invalid("Repository URL must not contain whitespace or control characters");
+  if (value.startsWith("/")) return value;
+  if (/\s/.test(value)) invalid("Repository URL must not contain whitespace");
+  if (
+    /^(?:[a-zA-Z0-9_][a-zA-Z0-9_.-]*@)?(?:[a-zA-Z0-9_][a-zA-Z0-9_.-]*|\[[a-fA-F0-9:.]+\]):(?!-)[^:\s?#]+$/.test(
+      value,
+    ) &&
+    !value.includes("://")
+  )
+    return value;
+  let parsed;
+  try {
+    parsed = new URL(value);
+  } catch {
+    invalid(
+      "Use an HTTPS URL, an SSH URL (git@host:team/repo.git or ssh://git@host/team/repo.git), or an absolute server-local path",
+    );
+  }
+  if (
+    !["https:", "ssh:"].includes(parsed.protocol) ||
+    !parsed.hostname ||
+    parsed.password ||
+    (parsed.username && parsed.protocol === "https:") ||
+    parsed.search ||
+    parsed.hash
+  )
+    invalid(
+      "Repository URL must use HTTPS or SSH and must not contain passwords, HTTPS credentials, query parameters, or fragments",
+    );
+  return value;
+}
+
 export function gitEnv(extra = {}) {
   const env = {
     PATH: process.env.PATH,

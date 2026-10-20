@@ -3,7 +3,14 @@ import { join } from "node:path";
 import { existsSync, rmSync } from "node:fs";
 import { z } from "zod";
 import { hash, token, now, transaction } from "./db.mjs";
-import { git, gitEnv, repoPath, initializeRepo, upstreamEnv } from "./git.mjs";
+import {
+  git,
+  gitEnv,
+  repoPath,
+  initializeRepo,
+  upstreamEnv,
+  validateRepositoryUrl,
+} from "./git.mjs";
 
 const id = z.coerce.number().int().positive();
 const commit = z.string().regex(/^[a-f0-9]{40}$/, "Use a full commit SHA");
@@ -320,7 +327,7 @@ export function installOrchestration({
     const input = z
       .object({
         name: z.string().trim().min(1).max(100),
-        url: z.string().min(1).max(2000),
+        url: z.string().trim().min(1).max(2000),
         main_branch: branchName.default("main"),
         credential_env: z
           .string()
@@ -330,25 +337,7 @@ export function installOrchestration({
       })
       .strict()
       .parse(req.body);
-    if (!input.url.startsWith("/")) {
-      let parsed;
-      try {
-        parsed = new URL(input.url);
-      } catch {
-        fail(400, "Use an HTTPS, SSH, or absolute server-local repository URL");
-      }
-      if (
-        !["https:", "ssh:"].includes(parsed.protocol) ||
-        parsed.password ||
-        (parsed.username && parsed.protocol === "https:") ||
-        parsed.search ||
-        parsed.hash
-      )
-        fail(
-          400,
-          "Repository URL must not contain credentials, query parameters, or fragments",
-        );
-    }
+    validateRepositoryUrl(input.url);
     // Validate before persisting the row so a missing secret cannot leave a registered repository.
     upstreamEnv(input, env);
     const r = atomic(() =>

@@ -262,10 +262,11 @@ machine. For SSH, Compose mounts the launching user's `~/.ssh` read-only at
 `/home/node/.ssh` in the server only; workers receive no SSH mount. Override the
 host directory with `SSH_DIR` in `.env`. The directory must already exist and
 its keys/config must be readable by the container's `node` user (UID 1000).
-Use `ssh://git@git.example.com/team/project.git` and leave the credential
-variable field empty. With `ssh://`, the hostname and repository path are
-separated by `/`; a colon after the hostname introduces a numeric port.
-The shorter `git@host:team/project.git` format is not currently accepted.
+Paste the host's SSH clone URL directly, such as `git@git.example.com:team/project.git`,
+and leave the credential variable field empty. Explicit SSH URLs such as
+`ssh://git@git.example.com/team/project.git` also work. With `ssh://`, the hostname
+and repository path are separated by `/`; a colon after the hostname introduces
+a numeric port. SCP-style paths retain Git's usual SSH-home-relative meaning.
 
 The mounted directory supplies keys, SSH config, and verified `known_hosts`.
 Host SSH configuration using absolute host paths may need container-compatible

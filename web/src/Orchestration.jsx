@@ -135,7 +135,7 @@ export function RepositoriesPage({ api, data, refreshKey, notify }) {
                 <input
                   name="url"
                   required
-                  placeholder="https://github.com/team/project.git"
+                  placeholder="git@git.example.com:team/project.git"
                 />
               </label>
               <label>
