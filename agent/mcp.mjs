@@ -4,6 +4,7 @@ import { z } from "zod";
 import { readFile, writeFile, mkdir, realpath } from "node:fs/promises";
 import { resolve, relative, dirname, isAbsolute } from "node:path";
 import { createApi } from "./api.mjs";
+import { prepareBranchWorkspace } from "./git-workspace.mjs";
 
 const api = createApi();
 const workspace = await realpath(resolve(process.env.AGENT_WORKSPACE || "."));
@@ -45,6 +46,139 @@ tool(
   () => api("/bootstrap"),
 );
 tool(
+  "orchestration_overview",
+  "List registered repositories, managed branches, and explicit work/review capabilities. Work is voluntary; discussion and non-code tickets need no branch or approved plan.",
+  {},
+  () => api("/orchestration"),
+);
+tool(
+  "list_branches",
+  "List managed branches, optionally linked to a ticket.",
+  { thread_id: id.optional() },
+  ({ thread_id }) =>
+    api("/branches" + (thread_id ? `?thread_id=${thread_id}` : "")),
+);
+tool(
+  "read_branch",
+  "Read branch ownership, current commit, ticket links, dependencies, and revision-specific reviews.",
+  { branch_id: id },
+  ({ branch_id }) => api(`/branches/${branch_id}`),
+);
+tool(
+  "read_branch_diff",
+  "Read the managed branch diff against current upstream main, with exact commit and target SHAs. Approval applies to those revisions.",
+  { branch_id: id },
+  ({ branch_id }) => api(`/branches/${branch_id}/diff`, { timeout: 120000 }),
+);
+tool(
+  "remove_branch_dependency",
+  "Remove a merge dependency from a branch you own.",
+  { branch_id: id, depends_on_id: id },
+  ({ branch_id, depends_on_id }) =>
+    api(`/branches/${branch_id}/dependencies/${depends_on_id}`, {
+      method: "DELETE",
+    }),
+);
+tool(
+  "create_branch",
+  "Create a managed branch you own in a registered repository. Links to any number of tickets; no plan approval required. Use prepare_branch_workspace to work on it.",
+  {
+    repository_id: id,
+    name: z.string().min(1).max(200),
+    thread_ids: z.array(id).optional(),
+    base: z.string().optional(),
+  },
+  ({ repository_id, ...body }) =>
+    api(`/repositories/${repository_id}/branches`, {
+      method: "POST",
+      body,
+      timeout: 120000,
+    }),
+);
+tool(
+  "link_branch",
+  "Link an existing managed branch to another ticket.",
+  { branch_id: id, thread_id: id },
+  ({ branch_id, ...body }) =>
+    api(`/branches/${branch_id}/link`, {
+      method: "POST",
+      body,
+      timeout: 120000,
+    }),
+);
+tool(
+  "handoff_branch",
+  "Explicitly transfer branch write ownership to another eligible worker. Others may still fetch and review.",
+  { branch_id: id, owner_id: id },
+  ({ branch_id, ...body }) =>
+    api(`/branches/${branch_id}/handoff`, {
+      method: "POST",
+      body,
+      timeout: 120000,
+    }),
+);
+tool(
+  "add_branch_dependency",
+  "Require another managed branch to merge before this branch can merge.",
+  { branch_id: id, depends_on_id: id },
+  ({ branch_id, ...body }) =>
+    api(`/branches/${branch_id}/dependencies`, {
+      method: "POST",
+      body,
+      timeout: 120000,
+    }),
+);
+tool(
+  "review_branch",
+  "Record a review of the exact current commit. Requires explicit review capability; you cannot approve your own work. May escalate to human approval. Approval notifies the worker and never automatically merges.",
+  {
+    branch_id: id,
+    commit: z.string().regex(/^[a-f0-9]{40,64}$/),
+    target_commit: z
+      .string()
+      .regex(/^[a-f0-9]{40}$/)
+      .optional(),
+    decision: z.enum(["approved", "changes_requested"]),
+    body: z.string().max(50000).optional(),
+    require_human: z.boolean().optional(),
+  },
+  ({ branch_id, ...body }) =>
+    api(`/branches/${branch_id}/reviews`, {
+      method: "POST",
+      body,
+      timeout: 120000,
+    }),
+);
+tool(
+  "request_branch_merge",
+  "Explicitly request integration into main after review. Only the branch owner or a human can request; server enforces exact-commit approval, policy and dependencies. New commits require renewed review.",
+  { branch_id: id },
+  ({ branch_id }) =>
+    api(`/branches/${branch_id}/merge`, {
+      method: "POST",
+      body: {},
+      timeout: 120000,
+    }),
+);
+tool(
+  "prepare_branch_workspace",
+  "Provision or reopen your isolated local checkout for a managed branch under your persistent workspace. Uses the board Git gateway and your board identity, never upstream credentials. Preserves local edits and commits. Ordinary git fetch/push then work in this directory.",
+  { branch_id: id },
+  async ({ branch_id }) => {
+    const branch = await api(`/branches/${branch_id}`);
+    const repositories = await api("/repositories");
+    const repository = repositories.find((r) => r.id === branch.repository_id);
+    if (!repository) throw new Error("Repository not found");
+    const { user } = await api("/bootstrap");
+    return prepareBranchWorkspace({
+      workspace,
+      branch,
+      repository,
+      identity: user,
+    });
+  },
+);
+tool(
   "list_threads",
   "List work items in chronological start order. Optional channel, assignee, text search, and offset (500 per page).",
   {
@@ -67,7 +201,7 @@ tool(
 );
 tool(
   "search_platform",
-  "Search all channels (including archived), threads, replies, people/agent roles, published attachment filenames, and your private reminders. Literal text search; file contents are excluded. Runtime logs require admin access. Paginate with offset and limit.",
+  "Search all channels (including archived), threads, replies, registered repository names, managed branches, people/agent roles, published attachment filenames, and your private reminders. Literal text search; file contents are excluded. Runtime logs require admin access. Paginate with offset and limit.",
   {
     query: z.string().max(200),
     limit: z.number().int().min(1).max(100).optional(),

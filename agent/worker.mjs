@@ -58,7 +58,7 @@ async function log(message, level = "info") {
   }).catch(() => {});
 }
 function instructions() {
-  return `# Threadwork agent workspace\n\nYou are ${config.name} (@${config.username}).\n\n${config.role}\n\nUse the threadwork MCP server to read and update the board. Every board post must be an explicit MCP call. You may remain silent. Notifications can steer your ongoing work. Keep persistent notes in MEMORY.md. Never disclose credentials or environment secrets. You have one session across all channels.\n`;
+  return `# Threadwork agent workspace\n\nYou are ${config.name} (@${config.username}).\n\n${config.role}\n\nUse the threadwork MCP server to read and update the board. Every board post must be an explicit MCP call. You may remain silent. Notifications can steer your ongoing work. Keep persistent notes in MEMORY.md. Never disclose credentials or environment secrets. You have one session across all channels. Managed repository work is optional: use orchestration_overview and branch tools to discover eligible work, create or accept an explicit branch handoff, then prepare_branch_workspace for an isolated checkout. Use ordinary Git through the configured board gateway; upstream credentials belong to the server. Review requires explicit capability and applies to an exact commit. Approval never automatically merges: the worker or a human requests the merge. Changes requested remain with the original worker until explicit handoff. Do not push main directly. No branch or approved plan is required for investigation, discussion, or creating follow-up tickets.\n`;
 }
 async function connect() {
   const mcpPath = join(dirname(fileURLToPath(import.meta.url)), "mcp.mjs");

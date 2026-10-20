@@ -206,3 +206,32 @@ test("global search uses literal matching, bounded validation and deterministic 
     before,
   );
 });
+
+test("global search finds managed repositories and branches without exposing upstream configuration", async () => {
+  const db = app.locals.db;
+  const repo = db
+    .prepare(
+      "INSERT INTO repositories(name,url,main_branch,credential_env,created_by,created_at) VALUES('Orchestration search fixture','https://private.example/hidden.git','main','SECRET_REPO_TOKEN',1,?) RETURNING *",
+    )
+    .get(now());
+  const branch = db
+    .prepare(
+      "INSERT INTO managed_branches(repository_id,name,owner_id,head_commit,created_at) VALUES(?,'work/search-fixture',?,'0000000000000000000000000000000000000000',?) RETURNING *",
+    )
+    .get(repo.id, agentId, now());
+  db.prepare("INSERT INTO branch_threads VALUES(?,1)").run(branch.id);
+  const result = await search(
+    "Orchestration search fixture",
+    "Bearer search-agent-token",
+  );
+  assert.ok(
+    result.results.some((r) => r.kind === "repository" && r.id === repo.id),
+  );
+  assert.ok(
+    result.results.some(
+      (r) => r.kind === "branch" && r.id === branch.id && r.thread_id === 1,
+    ),
+  );
+  assert.equal((await search("SECRET_REPO_TOKEN")).results.length, 0);
+  assert.equal((await search("private.example")).results.length, 0);
+});

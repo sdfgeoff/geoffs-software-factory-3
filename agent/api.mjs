@@ -7,7 +7,14 @@ export function createApi({
   if (!credential) throw new Error("AGENT_TOKEN is required");
   return async function api(
     path,
-    { method = "GET", body, raw = false, retries = 2, idempotencyKey } = {},
+    {
+      method = "GET",
+      body,
+      raw = false,
+      retries = 2,
+      idempotencyKey,
+      timeout = 20000,
+    } = {},
   ) {
     const key = idempotencyKey || (method !== "GET" ? randomUUID() : undefined);
     for (let attempt = 0; ; attempt++) {
@@ -28,7 +35,7 @@ export function createApi({
               : body === undefined
                 ? undefined
                 : JSON.stringify(body),
-          signal: AbortSignal.timeout(20000),
+          signal: AbortSignal.timeout(timeout),
         });
         if (!response.ok) {
           const info = await response.json().catch(() => ({}));

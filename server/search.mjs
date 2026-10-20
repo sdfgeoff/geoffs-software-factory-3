@@ -30,6 +30,13 @@ export function searchPlatform(db, user, input) {
         FROM attachments a LEFT JOIN replies r ON r.id=a.reply_id
         JOIN threads t ON t.id=COALESCE(r.thread_id,a.thread_id) JOIN channels c ON c.id=t.channel_id
       UNION ALL
+      SELECT 'repository', p.id, p.name, 'Main branch: ' || p.main_branch, NULL, NULL, NULL, NULL, p.created_at, 'Repository'
+        FROM repositories p
+      UNION ALL
+      SELECT 'branch', b.id, b.name, p.name || ' · ' || u.name || ' · ' || b.state, NULL, NULL,
+        (SELECT thread_id FROM branch_threads WHERE branch_id=b.id ORDER BY thread_id LIMIT 1), NULL, b.created_at, 'Managed branch'
+        FROM managed_branches b JOIN repositories p ON p.id=b.repository_id JOIN users u ON u.id=b.owner_id
+      UNION ALL
       SELECT 'person', u.id, u.name, '@' || u.username || ' ' || COALESCE(a.role,''), NULL, NULL, NULL, NULL, u.created_at,
         CASE WHEN u.kind='agent' THEN 'Agent' ELSE 'Person' END
         FROM users u LEFT JOIN agents a ON a.user_id=u.id

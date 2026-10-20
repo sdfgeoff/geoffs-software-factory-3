@@ -1,3 +1,4 @@
+import { installOrchestration, gitIdentity } from "./orchestration.mjs";
 import express from "express";
 import { searchPlatform } from "./search.mjs";
 import { parseSchedule, deliverSchedules } from "./schedules.mjs";
@@ -154,7 +155,12 @@ export function createApp({
       /(?:^|;\s*)tw_session=([a-f0-9]+)/,
     )?.[1];
     let user;
-    if (bearer)
+    if (
+      /^\/git\/\d+\.git\//.test(req.path) &&
+      req.headers.authorization?.startsWith("Basic ")
+    )
+      user = gitIdentity(db, req.headers.authorization);
+    else if (bearer)
       user = db
         .prepare("SELECT * FROM users WHERE token_hash=? AND kind='agent'")
         .get(hash(bearer));
@@ -164,7 +170,11 @@ export function createApp({
           "SELECT u.* FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=? AND s.expires_at>?",
         )
         .get(hash(cookie), now());
-    if (!user) return res.status(401).json({ error: "Sign in required" });
+    if (!user) {
+      if (req.path.startsWith("/git/"))
+        res.setHeader("WWW-Authenticate", 'Basic realm="Threadwork Git"');
+      return res.status(401).json({ error: "Sign in required" });
+    }
     req.user = safeUser(user);
     req.session = cookie;
     if (
@@ -282,6 +292,18 @@ export function createApp({
     broadcast();
     res.json(result);
   }
+  installOrchestration({
+    app,
+    db,
+    dataDir,
+    env,
+    admin,
+    event,
+    participate,
+    broadcast,
+    mutate,
+    fail,
+  });
   app.get("/api/search", (req, res) =>
     res.json(searchPlatform(db, req.user, req.query)),
   );

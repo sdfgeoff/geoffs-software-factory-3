@@ -3278,3 +3278,188 @@ code {
 .search-backdrop {
   z-index: 80;
 }
+
+/* Managed code artifacts remain optional within conversations. */
+.orchestration-content {
+  padding: 0 39px 40px;
+  max-width: 1100px;
+  display: grid;
+  gap: 18px;
+}
+.orchestration-card {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 23px;
+  background: var(--surface, #fffefb);
+  min-width: 0;
+}
+.orchestration-card h2,
+.orchestration-card h3 {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 0 0 12px;
+  font-size: 16px;
+}
+.orchestration-card h4 {
+  margin: 24px 0 12px;
+}
+.orchestration-card p,
+.thread-branches p {
+  font-size: 12px;
+  line-height: 1.7;
+}
+.orchestration-code,
+.orchestration-secret {
+  display: block;
+  overflow-wrap: anywhere;
+  font-family: monospace;
+  font-size: 12px;
+  margin: 8px 0;
+  white-space: pre-wrap;
+  user-select: all;
+}
+.orchestration-secret {
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+}
+.orchestration-form {
+  display: grid;
+  gap: 13px;
+  margin: 18px 0 6px;
+}
+.orchestration-form label {
+  display: grid;
+  gap: 6px;
+  font-size: 12px;
+}
+.orchestration-form input,
+.orchestration-form select,
+.orchestration-form textarea {
+  width: 100%;
+  min-width: 0;
+}
+.orchestration-form textarea {
+  min-height: 90px;
+}
+.orchestration-form small {
+  font-size: 11px;
+  line-height: 1.6;
+}
+.orchestration-form .button {
+  justify-self: start;
+}
+.orchestration-form .orchestration-checkbox {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+.orchestration-checkbox input {
+  width: auto;
+}
+.orchestration-error {
+  margin: 10px 0;
+}
+.orchestration-capabilities .orchestration-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  border-top: 1px solid var(--line);
+  padding-top: 14px;
+}
+.orchestration-capabilities strong {
+  flex: 1;
+  min-width: 120px;
+  font-size: 13px;
+}
+.orchestration-branch-summary {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+.thread-branches {
+  padding: 20px 0;
+}
+.orchestration-title {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 8px;
+}
+.orchestration-title h3 {
+  font-size: 14px;
+  margin: 0;
+}
+.orchestration-branch-list {
+  display: grid;
+  gap: 8px;
+  margin: 15px 0;
+}
+.orchestration-branch-button {
+  text-align: left;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  width: 100%;
+}
+.orchestration-branch-button.selected {
+  background: #edf2e5;
+  border-color: #93a781;
+}
+.orchestration-branch-button strong,
+.orchestration-branch-button small {
+  display: block;
+  overflow-wrap: anywhere;
+}
+.orchestration-branch-button small {
+  margin-top: 4px;
+  font-size: 11px;
+}
+.branch-detail {
+  margin-top: 20px;
+  padding: 17px;
+}
+.branch-review {
+  border-left: 2px solid #a9ba96;
+  padding-left: 12px;
+  margin: 14px 0;
+}
+.branch-review strong,
+.branch-review small {
+  display: block;
+  font-size: 12px;
+}
+.branch-review small {
+  margin-top: 5px;
+  font-size: 11px;
+}
+.branch-review p {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 700px) {
+  .orchestration-content {
+    padding: 0 20px 25px;
+  }
+  .orchestration-card {
+    padding: 17px;
+  }
+}
+.branch-diff {
+  margin-top: 18px;
+}
+.branch-diff pre {
+  max-height: 400px;
+  overflow: auto;
+  white-space: pre;
+  font-size: 11px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 10px;
+}

@@ -35,6 +35,7 @@ services:
       dockerfile: docker/Dockerfile.server
     restart: unless-stopped
     init: true
+    env_file: .env
     environment:
       ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
       ADMIN_NAME: ${ADMIN_NAME:-Admin}

@@ -50,6 +50,7 @@ import {
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import "./style.css";
+import { RepositoriesPage, ThreadBranches } from "./Orchestration.jsx";
 
 async function api(path, options = {}) {
   const response = await fetch("/api" + path, {
@@ -781,6 +782,13 @@ function App() {
             People & agents
             <span className="nav-count">{data.users.length}</span>
           </button>
+          <button
+            className={page === "repositories" ? "active" : ""}
+            onClick={() => go("repositories")}
+          >
+            <Icon icon={FileText} />
+            Repositories
+          </button>
         </nav>
         <div className="nav-label channel-label">
           CHANNELS
@@ -897,7 +905,9 @@ function App() {
                   ? "Inbox"
                   : page === "team"
                     ? "People & agents"
-                    : "Settings"}
+                    : page === "repositories"
+                      ? "Repositories"
+                      : "Settings"}
             </strong>
           </div>
           <div className="topbar-right">
@@ -1602,6 +1612,15 @@ function App() {
             </div>
           </>
         )}
+        {page === "repositories" && (
+          <RepositoriesPage
+            key={data.user.id}
+            api={api}
+            data={data}
+            refreshKey={refreshKey}
+            notify={notify}
+          />
+        )}
         {page === "settings" && data.user.admin && (
           <SettingsPage
             data={data}
@@ -1620,7 +1639,9 @@ function App() {
             setSearchOpen(false);
             setSearchTarget(null);
             setModal(null);
-            if (result.kind === "agent-log") {
+            if (result.kind === "repository" || result.kind === "branch") {
+              go("repositories");
+            } else if (result.kind === "agent-log") {
               go("team");
               setModal({
                 type: "agent-detail",
@@ -1987,8 +2008,22 @@ function ThreadDetail({ thread: t, data, act, notify, close, edit }) {
           >
             Activity
           </button>
+          <button
+            className={tab === "branches" ? "selected" : ""}
+            onClick={() => setTab("branches")}
+          >
+            Branches
+          </button>
         </div>
-        {tab === "discussion" ? (
+        {tab === "branches" ? (
+          <ThreadBranches
+            key={t.id}
+            api={api}
+            data={data}
+            threadId={t.id}
+            refreshKey={t.events?.length}
+          />
+        ) : tab === "discussion" ? (
           <div className="replies">
             {t.replies.map((r) => (
               <article className="reply" id={`reply-${r.id}`} key={r.id}>

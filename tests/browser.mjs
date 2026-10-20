@@ -1,3 +1,4 @@
+import "./orchestration-browser.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { chromium, expect } from "@playwright/test";

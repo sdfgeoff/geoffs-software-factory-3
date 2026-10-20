@@ -52,6 +52,20 @@ export function openDatabase(path) {
       created_at TEXT NOT NULL, last_fired_at TEXT
     );
     CREATE INDEX IF NOT EXISTS schedule_due ON notification_schedules(state,due_at);`);
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS work_capabilities (user_id INTEGER PRIMARY KEY REFERENCES users(id), can_work INTEGER NOT NULL DEFAULT 1, can_review INTEGER NOT NULL DEFAULT 0);
+      CREATE TABLE IF NOT EXISTS repositories (id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE, url TEXT NOT NULL, main_branch TEXT NOT NULL, credential_env TEXT, require_human INTEGER NOT NULL DEFAULT 0, created_by INTEGER NOT NULL REFERENCES users(id), created_at TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS managed_branches (id INTEGER PRIMARY KEY, repository_id INTEGER NOT NULL REFERENCES repositories(id), name TEXT NOT NULL, owner_id INTEGER NOT NULL REFERENCES users(id), state TEXT NOT NULL DEFAULT 'active', head_commit TEXT NOT NULL, created_at TEXT NOT NULL, merged_at TEXT, UNIQUE(repository_id,name));
+      CREATE TABLE IF NOT EXISTS branch_contributors (branch_id INTEGER NOT NULL REFERENCES managed_branches(id), user_id INTEGER NOT NULL REFERENCES users(id), PRIMARY KEY(branch_id,user_id));
+      CREATE TABLE IF NOT EXISTS branch_threads (branch_id INTEGER NOT NULL REFERENCES managed_branches(id), thread_id INTEGER NOT NULL REFERENCES threads(id), PRIMARY KEY(branch_id,thread_id));
+      CREATE TABLE IF NOT EXISTS branch_reviews (id INTEGER PRIMARY KEY, branch_id INTEGER NOT NULL REFERENCES managed_branches(id), reviewer_id INTEGER NOT NULL REFERENCES users(id), commit_hash TEXT NOT NULL, target_commit TEXT NOT NULL, decision TEXT NOT NULL, body TEXT NOT NULL DEFAULT '', require_human INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS branch_dependencies (branch_id INTEGER NOT NULL REFERENCES managed_branches(id), depends_on_id INTEGER NOT NULL REFERENCES managed_branches(id), PRIMARY KEY(branch_id,depends_on_id), CHECK(branch_id != depends_on_id));
+      CREATE TABLE IF NOT EXISTS git_credentials (token_hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id), label TEXT NOT NULL, expires_at TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS git_push_journal (repository_id INTEGER PRIMARY KEY REFERENCES repositories(id), actor_id INTEGER NOT NULL REFERENCES users(id));
+      CREATE TABLE IF NOT EXISTS git_operations (id INTEGER PRIMARY KEY, repository_id INTEGER NOT NULL REFERENCES repositories(id), branch_id INTEGER REFERENCES managed_branches(id), actor_id INTEGER NOT NULL REFERENCES users(id), kind TEXT NOT NULL, commit_hash TEXT NOT NULL, previous_commit TEXT NOT NULL, state TEXT NOT NULL DEFAULT 'pending', error TEXT, created_at TEXT NOT NULL);
+    `);
+    if (db.prepare("PRAGMA user_version").get().user_version < 4)
+      db.exec("PRAGMA user_version=4");
     if (db.prepare("PRAGMA user_version").get().user_version < 3)
       db.exec("PRAGMA user_version=3");
   });
