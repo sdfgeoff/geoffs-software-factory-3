@@ -1,4 +1,4 @@
-import { replyBodyCandidates } from "./search-index.mjs";
+import { replyBodyCandidates, replyThreadCandidates } from "./search-index.mjs";
 import { z } from "zod";
 
 // Search published board content and the caller's private reminders only. Selecting
@@ -12,18 +12,24 @@ export function searchPlatform(db, user, input) {
     })
     .parse(input);
   if (!q) return { results: [], has_more: false };
-  const candidateIds = replyBodyCandidates(db, q, limit + offset + 1);
-  const candidates = JSON.stringify(candidateIds);
+  const needed = limit + offset + 1;
+  const candidateIds = new Set(replyBodyCandidates(db, q, needed));
+  const titles = db
+    .prepare(
+      `SELECT id,CASE WHEN lower(title)=lower(?) THEN 0 WHEN instr(lower(title),lower(?))>0 THEN 1 ELSE 2 END AS priority FROM threads WHERE instr(lower(title),lower(?))>0 OR lower(?)='tw-' || id`,
+    )
+    .all(q, q, q, q);
+  for (const priority of [0, 1, 2]) {
+    const ids = titles.filter((t) => t.priority === priority).map((t) => t.id);
+    for (const id of replyThreadCandidates(db, ids, needed))
+      candidateIds.add(id);
+  }
+  const candidates = JSON.stringify([...candidateIds]);
   const rows = db
     .prepare(
       `
     WITH reply_candidates AS (
       SELECT value AS id FROM json_each($candidates)
-      UNION
-      SELECT r.id FROM replies r WHERE r.thread_id IN (
-        SELECT id FROM threads WHERE instr(lower(title),lower($q))>0
-        UNION SELECT id FROM threads WHERE lower($q)='tw-' || id
-      )
     ), content AS (
       SELECT 'channel' AS kind, c.id, c.name AS title, c.description AS body,
         c.id AS channel_id, c.name AS channel_name, NULL AS thread_id,

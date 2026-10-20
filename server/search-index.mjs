@@ -79,3 +79,24 @@ export function replyTextFilter(db, q) {
     args: ["%" + q.replace(/[\\%_]/g, "\\$&") + "%"],
   };
 }
+
+// Reply titles are inherited from threads. Bound each ranking bucket as well as
+// body matches; a common thread title must not expand into millions of rows.
+export function replyThreadCandidates(db, threadIds, needed) {
+  if (!threadIds.length) return [];
+  const ids = JSON.stringify(threadIds);
+  const recent = db
+    .prepare(
+      `SELECT id FROM (
+    SELECT id,thread_id FROM replies ORDER BY created_at DESC,id LIMIT ?
+  ) WHERE thread_id IN (SELECT value FROM json_each(?)) LIMIT ?`,
+    )
+    .all(Math.max(512, needed), ids, needed);
+  if (recent.length === needed) return recent.map((r) => r.id);
+  return db
+    .prepare(
+      `SELECT id FROM replies WHERE thread_id IN (SELECT value FROM json_each(?)) ORDER BY created_at DESC,id LIMIT ?`,
+    )
+    .all(ids, needed)
+    .map((r) => r.id);
+}

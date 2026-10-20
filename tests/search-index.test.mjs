@@ -114,6 +114,14 @@ test("search index upgrades existing content atomically, tracks writes/deletes a
         (r) => r.thread_id === 2,
       ),
     );
+    db.prepare(
+      "UPDATE replies SET body='Literal TW-1 mention' WHERE id=2",
+    ).run();
+    assert.ok(
+      searchPlatform(db, { id: 1, admin: 1 }, { q: "TW-1" }).results.some(
+        (r) => r.kind === "reply" && r.id === 2 && r.thread_id === 2,
+      ),
+    );
     db.prepare("UPDATE replies SET body='new unique text' WHERE id=1").run();
     assert.deepEqual(replyBodyCandidates(db, "new unique", 10), [1]);
     db.prepare("DELETE FROM replies WHERE id=1").run();

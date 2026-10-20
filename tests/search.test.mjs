@@ -235,3 +235,46 @@ test("global search finds managed repositories and branches without exposing ups
   assert.equal((await search("SECRET_REPO_TOKEN")).results.length, 0);
   assert.equal((await search("private.example")).results.length, 0);
 });
+
+test("search readers see committed create/edit changes and retain HTTP validation messages", async () => {
+  async function mutate(path, method, body) {
+    const r = await fetch(url + "/api" + path, {
+      method,
+      headers: { Cookie: adminCookie, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    assert.equal(r.status, 200);
+    return r.json();
+  }
+  const thread = await mutate("/threads", "POST", {
+    channel_id: 1,
+    title: "Live index test",
+    body: "Opening",
+  });
+  const reply = await mutate(`/threads/${thread.id}/replies`, "POST", {
+    body: "created-index-sentinel",
+  });
+  assert.equal(
+    (await search("created-index-sentinel")).results[0].reply_id,
+    reply.id,
+  );
+  await mutate(`/replies/${reply.id}`, "PATCH", {
+    body: "edited-index-sentinel",
+  });
+  assert.equal((await search("created-index-sentinel")).results.length, 0);
+  assert.equal(
+    (await search("edited-index-sentinel")).results[0].reply_id,
+    reply.id,
+  );
+  const filtered = await fetch(
+    url + "/api/threads?paged=1&q=edited-index-sentinel",
+    { headers: { Cookie: adminCookie } },
+  );
+  assert.deepEqual(
+    (await filtered.json()).items.map((t) => t.id),
+    [thread.id],
+  );
+  const invalid = await search("test", adminCookie, { limit: 101 });
+  assert.equal(invalid.status, 400);
+  assert.match(invalid.error, /limit:/);
+});

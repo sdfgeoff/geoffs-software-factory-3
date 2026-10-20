@@ -83,6 +83,7 @@ try {
   for (const [name, q] of [
     ["unique", "unique-needle-e184"],
     ["common", "Shared"],
+    ["common-title", "Synthetic conversation"],
     ["absent", "absent-needle-no-match"],
     ["ID", "TW-1"],
   ]) {

@@ -1,8 +1,8 @@
 import { Worker } from "node:worker_threads";
 const failure = (message, status = 503) =>
   Object.assign(new Error(message), { status });
-// Lazy, bounded readers. Cancellation/timeouts terminate only that reader's
-// SQLite execution; stale queries cannot accumulate behind synchronous work.
+// Lazy, bounded readers. Cancelled readers retire; replacements wait for exit,
+// keeping native SQLite work off the HTTP loop without growing the thread count.
 export class SearchPool {
   constructor(
     path,

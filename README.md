@@ -706,3 +706,10 @@ conversation after 2,000 characters. See [bounded-page measurements and
 reproduction](docs/benchmarks/thread-pages.md). In environments with a `noexec`
 `/tmp`, run tests with `TMPDIR` pointing to an executable temporary directory;
 several existing tests execute synthetic Git hooks and command fixtures there.
+
+Search uses a schema-v9 SQLite FTS5 trigram index and a bounded pool of read-only
+search workers. Literal matching and permissions are preserved; very short queries
+can still require scans, and overload/deadline failures return 503 with guidance.
+The first upgrade builds the index before listening and needs extra database/WAL
+space. Back up before upgrading and allow a maintenance window for large existing
+databases. See [search migration costs, local latency budgets and reproduction](docs/benchmarks/indexed-search.md).
