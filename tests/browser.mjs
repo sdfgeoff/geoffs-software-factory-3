@@ -1,3 +1,4 @@
+import "./agent-activity-browser.mjs";
 import "./conversation-browser.mjs";
 import "./channel-browser.mjs";
 import "./reading-browser.mjs";
@@ -517,7 +518,7 @@ test(
       await expectSelectedView(
         page.getByRole("group", { name: "Agent details view", exact: true }),
         "Configuration",
-        3,
+        4,
       );
 
       await expect(

@@ -72,6 +72,8 @@ import {
   ThreadWorkControl,
 } from "./WorkQueue.jsx";
 
+const AgentActivity = React.lazy(() => import("./AgentActivity.jsx"));
+
 async function api(path, options = {}) {
   const response = await fetch("/api" + path, {
     credentials: "same-origin",
@@ -2723,27 +2725,36 @@ function ThreadDetail({
               )}
             </div>
           ) : (
-            <div className="activity-list">
-              {t.activity.map((e) => (
-                <div className="activity-item" key={e.id}>
-                  <span className="activity-dot" />
-                  <div>
-                    <strong>{e.actor_name}</strong>{" "}
-                    {e.type === "thread.created"
-                      ? "started this thread"
-                      : e.type === "reply.created"
-                        ? "posted a reply"
-                        : e.type === "reply.edited"
-                          ? "edited a reply"
-                          : "updated " +
-                            Object.keys(e.payload.changes || {})
-                              .map((k) => k.replace("_id", ""))
-                              .join(", ")}
-                    <time>{fullDate(e.created_at)}</time>
+            <>
+              <div className="activity-list">
+                {t.activity.map((e) => (
+                  <div className="activity-item" key={e.id}>
+                    <span className="activity-dot" />
+                    <div>
+                      <strong>{e.actor_name}</strong>{" "}
+                      {e.type === "thread.created"
+                        ? "started this thread"
+                        : e.type === "reply.created"
+                          ? "posted a reply"
+                          : e.type === "reply.edited"
+                            ? "edited a reply"
+                            : "updated " +
+                              Object.keys(e.payload.changes || {})
+                                .map((k) => k.replace("_id", ""))
+                                .join(", ")}
+                      <time>{fullDate(e.created_at)}</time>
+                    </div>
                   </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+              {data.user.admin && (
+                <React.Suspense
+                  fallback={<p className="muted">Loading activity viewer…</p>}
+                >
+                  <AgentActivity api={api} threadId={t.id} />
+                </React.Suspense>
+              )}
+            </>
           )}
         </div>
       </div>
@@ -3771,6 +3782,15 @@ function AgentDetail({
         >
           Configuration
         </button>
+        {data.user.admin && (
+          <button
+            className={tab === "activity" ? "selected" : ""}
+            aria-pressed={tab === "activity"}
+            onClick={() => setTab("activity")}
+          >
+            Activity
+          </button>
+        )}
         <button
           className={tab === "logs" ? "selected" : ""}
           aria-pressed={tab === "logs"}
@@ -4006,6 +4026,13 @@ function AgentDetail({
               )}
             </div>
           </>
+        )}
+        {tab === "activity" && data.user.admin && (
+          <React.Suspense
+            fallback={<p className="muted">Loading activity viewer…</p>}
+          >
+            <AgentActivity api={api} agentId={id} />
+          </React.Suspense>
         )}
         {tab === "logs" && (
           <div className="runtime-logs">

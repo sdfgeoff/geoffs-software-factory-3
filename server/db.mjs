@@ -77,6 +77,16 @@ export function openDatabase(path) {
     // retain notification_inbox for worker accepted_at/oldest-first delivery.
     db.exec(`CREATE INDEX IF NOT EXISTS notification_latest ON notifications(user_id,id);
       CREATE INDEX IF NOT EXISTS notification_unread ON notifications(user_id) WHERE read_at IS NULL;`);
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS agent_activity(id INTEGER PRIMARY KEY AUTOINCREMENT,agent_id INTEGER NOT NULL REFERENCES agents(user_id),event_id TEXT NOT NULL,session_id TEXT,turn_id TEXT,item_id TEXT,type TEXT NOT NULL,occurred_at TEXT NOT NULL,payload TEXT NOT NULL,created_at TEXT NOT NULL,UNIQUE(agent_id,event_id));
+      CREATE INDEX IF NOT EXISTS agent_activity_recent ON agent_activity(agent_id,id DESC);
+      CREATE INDEX IF NOT EXISTS agent_activity_turn ON agent_activity(agent_id,turn_id,id);
+      CREATE INDEX IF NOT EXISTS agent_activity_retention ON agent_activity(created_at);
+      CREATE TABLE IF NOT EXISTS agent_activity_links(activity_id INTEGER NOT NULL REFERENCES agent_activity(id) ON DELETE CASCADE,thread_id INTEGER NOT NULL REFERENCES threads(id),kind TEXT NOT NULL CHECK(kind IN ('tool','wake')),PRIMARY KEY(activity_id,thread_id,kind));
+      CREATE INDEX IF NOT EXISTS agent_activity_thread ON agent_activity_links(thread_id,kind,activity_id);
+    `);
+    if (db.prepare("PRAGMA user_version").get().user_version < 7)
+      db.exec("PRAGMA user_version=7");
     if (db.prepare("PRAGMA user_version").get().user_version < 6)
       db.exec("PRAGMA user_version=6");
     if (db.prepare("PRAGMA user_version").get().user_version < 5)

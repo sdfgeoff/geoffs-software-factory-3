@@ -139,6 +139,30 @@ test(
         2,
         "even after recovery only humans posted",
       );
+      const activity = await wait(async () => {
+        const data = await call("/admin/agents/2/activity?limit=200");
+        return data.events.some((event) => event.type === "worker/wake") &&
+          data.events.some((event) => event.payload.item?.type === "reasoning")
+          ? data
+          : null;
+      });
+      assert.ok(
+        activity.events.some(
+          (event) => event.payload.item?.command === "echo fixture",
+        ),
+      );
+      assert.ok(
+        activity.events.some(
+          (event) => event.session_id === "one-persistent-session",
+        ),
+      );
+      assert.ok(
+        !JSON.stringify(activity).includes(
+          "PRIVATE_RAW_REASONING_MUST_NOT_BE_LOGGED",
+        ),
+      );
+      assert.ok(!output.includes("PRIVATE_RAW_REASONING_MUST_NOT_BE_LOGGED"));
+      assert.match(output, /threadwork.activity/);
       assert.ok(
         records()
           .filter((r) => r.method === "turn/start")

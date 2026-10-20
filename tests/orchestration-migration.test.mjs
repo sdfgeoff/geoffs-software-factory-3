@@ -38,7 +38,7 @@ test("schema 3 upgrade preserves accounts, sessions, conversations and reminders
     db.close();
     for (let attempt = 0; attempt < 2; attempt++) {
       db = openDatabase(path);
-      assert.equal(db.prepare("PRAGMA user_version").get().user_version, 6);
+      assert.equal(db.prepare("PRAGMA user_version").get().user_version, 7);
       assert.equal(db.prepare("SELECT COUNT(*) n FROM users").get().n, 2);
       assert.equal(
         db.prepare("SELECT token_hash FROM sessions").get().token_hash,

@@ -14,6 +14,11 @@ services:
     cap_drop: [ALL]
     pids_limit: 512
     shm_size: 256mb
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     healthcheck:
       test:
         [
@@ -30,6 +35,8 @@ services:
       THREADWORK_URL: ${THREADWORK_URL:?Set your server URL}
       AGENT_TOKEN: ${AGENT_TOKEN:?Set this agent's server token}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      AGENT_ACTIVITY: ${AGENT_ACTIVITY:-true}
+      AGENT_ACTIVITY_STDOUT: ${AGENT_ACTIVITY_STDOUT:-true}
     volumes:
       - agent-data:/state
 volumes:
