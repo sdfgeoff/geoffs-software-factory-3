@@ -1,6 +1,7 @@
 import { ResultMcpServer } from "./mcp-results.mjs";
 import { publicResult, toolOutput } from "../shared/results.mjs";
-import { errorResult } from "../shared/errors.mjs";
+import { threadListFields } from "../shared/requests.mjs";
+import { errorResult, httpError } from "../shared/errors.mjs";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import { readFile, writeFile, mkdir, realpath } from "node:fs/promises";
@@ -279,22 +280,46 @@ tool(
     });
   },
 );
+const listFields = threadListFields({ coerce: false });
 tool(
   "list_threads",
-  "List work items in chronological start order. Optional channel, assignee, text search, and offset (500 per page).",
+  "List work items newest first by creation time and ID. Legacy calls return an array of up to 500 items using offset. Set paged=true for {items,total,statusCounts,older,newer}; limit defaults to 50 (1–100). Pass older as before or newer as after, keeping filters unchanged. Paging-only arguments require paged=true; offset cannot be combined with paging, and before/after are mutually exclusive. Totals and statusCounts describe all matching items. Text search is literal.",
   {
-    channel_id: id.optional(),
-    assignee_id: id.optional(),
-    query: z.string().optional(),
-    offset: z.number().int().min(0).optional(),
+    channel_id: listFields.channel,
+    assignee_id: listFields.assignee,
+    query: listFields.q,
+    offset: listFields.offset,
+    paged: z.boolean().optional(),
+    limit: listFields.limit.removeDefault().optional(),
+    before: listFields.before,
+    after: listFields.after,
+    status_id: listFields.status,
   },
   (args) => {
+    const pagingFields = ["limit", "before", "after", "status_id"];
+    if (
+      (args.paged !== true &&
+        pagingFields.some((key) => args[key] !== undefined)) ||
+      (args.paged === true && args.offset !== undefined) ||
+      (args.before !== undefined && args.after !== undefined)
+    )
+      throw Object.assign(new Error("Invalid pagination arguments"), {
+        publicError: httpError(
+          400,
+          "Use paged=true for paging fields, omit offset in paged mode, and choose only one cursor.",
+        ),
+      });
     const q = new URLSearchParams();
     for (const [key, value] of Object.entries({
       channel: args.channel_id,
       assignee: args.assignee_id,
       q: args.query,
       offset: args.offset,
+      paged: args.paged ? "1" : undefined,
+      limit: args.limit,
+      before: args.before,
+      after: args.after,
+      status: args.status_id,
     }))
       if (value !== undefined) q.set(key, String(value));
     return api("/threads?" + q);

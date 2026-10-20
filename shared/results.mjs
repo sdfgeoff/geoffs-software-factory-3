@@ -281,6 +281,13 @@ const branchNames = [
   "review_branch",
   "request_branch_merge",
 ];
+export const threadPageResult = obj({
+  items: z.array(threadResult),
+  total: count,
+  statusCounts: z.record(count),
+  older: ns,
+  newer: ns,
+});
 export const toolResults = {
   workspace_overview: workspaceResult,
   work_queue: queueResult,
@@ -303,7 +310,7 @@ export const toolResults = {
     preserved: z.boolean(),
     message: s,
   }),
-  list_threads: z.array(threadResult),
+  list_threads: z.union([z.array(threadResult), threadPageResult]),
   search_platform: searchResult,
   read_thread: threadResult,
   create_thread: threadResult,
@@ -350,13 +357,6 @@ export function publicResult(name, value) {
   return parsed.data;
 }
 
-export const threadPageResult = obj({
-  items: z.array(threadResult),
-  total: count,
-  statusCounts: z.record(count),
-  older: ns,
-  newer: ns,
-});
 const subscribedResult = obj({ subscribed: z.boolean() });
 toolResults.subscribe_channel = subscribedResult;
 toolResults.subscribe_thread = subscribedResult;
