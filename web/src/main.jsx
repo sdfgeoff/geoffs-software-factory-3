@@ -578,6 +578,14 @@ function App() {
     ),
     [threads, setThreads] = useState([]),
     [loadedChannelId, setLoadedChannelId] = useState(undefined),
+    [loadedListKey, setLoadedListKey] = useState(null),
+    [threadPage, setThreadPage] = useState({
+      total: 0,
+      statusCounts: {},
+      older: null,
+      newer: null,
+    }),
+    [threadWindows, setThreadWindows] = useState({}),
     [loading, setLoading] = useState(false),
     [query, setQuery] = useState(entry.query),
     [search, setSearch] = useState(entry.query),
@@ -606,6 +614,27 @@ function App() {
     [fullListKey, setFullListKey] = useState(0),
     [detailKey, setDetailKey] = useState(0),
     [listDeltaKey, setListDeltaKey] = useState(0);
+  const listKey = JSON.stringify([channelId, search, assignee, statusFilter]);
+  const listWindow = threadWindows[listKey] || {};
+  const windowKey = JSON.stringify(listWindow);
+  const changeWindow = (value) => {
+    if (!value.before && !value.after && channelId)
+      channelPositions.current.delete(`${channelId}:${listKey}:{}`);
+    setThreadWindows((windows) => ({ ...windows, [listKey]: value }));
+  };
+  const listContext = `${listKey}:${windowKey}`;
+  const listParams = () => {
+    const params = new URLSearchParams({
+      paged: "1",
+      limit: "50",
+      ...listWindow,
+    });
+    if (channelId) params.set("channel", channelId);
+    if (search) params.set("q", search);
+    if (assignee) params.set("assignee", assignee);
+    if (statusFilter) params.set("status", statusFilter);
+    return params;
+  };
   const originFocus = useRef(null);
   const navigation = useRef(null);
   const applyNavigation = useRef(null);
@@ -861,34 +890,20 @@ function App() {
     if (auth !== "signedIn" || !listVisible) return;
     let stale = false;
     fullListInvalid.current = false;
-    listRequested.current = `${channelId}:${search}:${assignee}`;
+    listRequested.current = listContext;
+    const versions = new Map(pendingThreads.current);
     setLoading(true);
-    const params = new URLSearchParams();
-    if (channelId) params.set("channel", channelId);
-    if (search) params.set("q", search);
-    if (assignee) params.set("assignee", assignee);
-    params.set("limit", "500");
-    const loadThreads = async () => {
-      const result = [];
-      while (!stale) {
-        if (!scope.current.listVisible) return null;
-        params.set("offset", String(result.length));
-        const batch = await api("/threads?" + params);
-        result.push(...batch);
-        if (batch.length < 500) break;
-      }
-      return result;
-    };
-    loadThreads()
-      .then((t) => {
+    api("/threads?" + listParams())
+      .then((result) => {
         if (!stale) {
-          if (!t) {
-            listRequested.current = null;
-            fullListInvalid.current = true;
-            return;
+          setThreads(result.items);
+          setThreadPage(result);
+          setLoadedListKey(listContext);
+          loadedContext.current = listContext;
+          for (const [id, version] of versions) {
+            if (pendingThreads.current.get(id) === version)
+              pendingThreads.current.delete(id);
           }
-          setThreads(t);
-          loadedContext.current = `${channelId}:${search}:${assignee}`;
           setLoadedChannelId(channelId);
         }
       })
@@ -905,8 +920,7 @@ function App() {
     return () => {
       stale = true;
     };
-  }, [auth, channelId, search, assignee, fullListKey]);
-  const listContext = `${channelId}:${search}:${assignee}`;
+  }, [auth, channelId, search, assignee, statusFilter, windowKey, fullListKey]);
   const loadedContext = useRef(null);
   useEffect(() => {
     if (
@@ -931,27 +945,17 @@ function App() {
     const versions = new Map(
       ids.map((id) => [id, pendingThreads.current.get(id)]),
     );
-    const params = new URLSearchParams({ ids: ids.join(",") });
-    if (channelId) params.set("channel", channelId);
-    if (search) params.set("q", search);
-    if (assignee) params.set("assignee", assignee);
-    api("/threads?" + params)
-      .then((matches) => {
+    // Reconcile the bounded window and totals together. A changed ID may have
+    // entered or left this page; appending deltas would grow it or hide an older row.
+    api("/threads?" + listParams())
+      .then((result) => {
         if (stale) return;
-        const changed = new Set(
-          ids.filter(
-            (id) => pendingThreads.current.get(id) === versions.get(id),
-          ),
-        );
-        for (const id of changed) pendingThreads.current.delete(id);
-        setThreads((current) =>
-          [
-            ...current.filter((t) => !changed.has(t.id)),
-            ...matches.filter((t) => changed.has(t.id)),
-          ].sort(
-            (a, b) => b.created_at.localeCompare(a.created_at) || b.id - a.id,
-          ),
-        );
+        for (const id of ids) {
+          if (pendingThreads.current.get(id) === versions.get(id))
+            pendingThreads.current.delete(id);
+        }
+        setThreads(result.items);
+        setThreadPage(result);
         if (pendingThreads.current.size) setListDeltaKey((k) => k + 1);
       })
       .catch((e) => {
@@ -1147,9 +1151,10 @@ function App() {
       </div>
     );
   const channel = data.channels.find((c) => c.id === channelId);
-  const shown = threads.filter(
-    (t) => !statusFilter || t.status_id === Number(statusFilter),
-  );
+  const listLoading = loading || loadedListKey !== `${listKey}:${windowKey}`;
+  const shown = (
+    loadedListKey === `${listKey}:${windowKey}` ? threads : []
+  ).filter((t) => !statusFilter || t.status_id === Number(statusFilter));
   return (
     <div className="app-shell">
       {mobile && (
@@ -1354,7 +1359,7 @@ function App() {
                             "All work"
                           )}
                           <span className="heading-count">
-                            {threads.length}
+                            {threadPage.total}
                           </span>
                         </h1>
                         {channel?.description && <p>{channel.description}</p>}
@@ -1492,6 +1497,19 @@ function App() {
                           setSearch("");
                           setAssignee("");
                           setStatusFilter("");
+                          const latestKey = JSON.stringify([
+                            channelId,
+                            "",
+                            "",
+                            "",
+                          ]);
+                          channelPositions.current.delete(
+                            `${channelId}:${latestKey}:{}`,
+                          );
+                          setThreadWindows((windows) => ({
+                            ...windows,
+                            [latestKey]: {},
+                          }));
                           notify("Message sent");
                         }}
                         textareaId="new-thread-message"
@@ -1499,12 +1517,31 @@ function App() {
                         draftKey="all-work"
                       />
                     )}
+                    {!(channel && view === "threads") && (
+                      <ThreadPagination
+                        page={threadPage}
+                        latest={!!(listWindow.before || listWindow.after)}
+                        loading={listLoading}
+                        changeWindow={changeWindow}
+                      />
+                    )}
                     {channel && view === "threads" ? (
                       <ChannelStream
-                        key={channel.id}
+                        key={`${channel.id}:${listContext}`}
                         channel={channel}
                         threads={shown}
-                        loading={loading || loadedChannelId !== channelId}
+                        pagination={
+                          <ThreadPagination
+                            page={threadPage}
+                            latest={!!(listWindow.before || listWindow.after)}
+                            loading={listLoading}
+                            changeWindow={changeWindow}
+                          />
+                        }
+                        positionKey={`${channel.id}:${listContext}`}
+                        latestPage={!listWindow.before && !listWindow.after}
+                        onLatest={() => changeWindow({})}
+                        loading={listLoading || loadedChannelId !== channelId}
                         data={data}
                         act={act}
                         notify={notify}
@@ -1516,6 +1553,19 @@ function App() {
                           setSearch("");
                           setAssignee("");
                           setStatusFilter("");
+                          const latestKey = JSON.stringify([
+                            channelId,
+                            "",
+                            "",
+                            "",
+                          ]);
+                          channelPositions.current.delete(
+                            `${channelId}:${latestKey}:{}`,
+                          );
+                          setThreadWindows((windows) => ({
+                            ...windows,
+                            [latestKey]: {},
+                          }));
                           notify("Message sent");
                         }}
                       />
@@ -1641,11 +1691,7 @@ function App() {
                                     <i style={{ background: s.color }} />
                                     {s.name}
                                     <small>
-                                      {
-                                        shown.filter(
-                                          (t) => t.status_id === s.id,
-                                        ).length
-                                      }
+                                      {threadPage.statusCounts[s.id] || 0}
                                     </small>
                                   </span>
                                   <button
@@ -2129,6 +2175,12 @@ function App() {
           act={act}
           notify={notify}
           openThread={openThread}
+          onThreadCreated={(thread) => {
+            changeWindow({});
+            setModal(null);
+            openThread(thread.id);
+            notify("Message sent");
+          }}
         />
       )}
       {toast && (
@@ -2278,8 +2330,44 @@ function SettingsPage({ data, act, setModal, notify }) {
     </>
   );
 }
+function ThreadPagination({ page, latest, loading, changeWindow }) {
+  return (
+    <nav className="thread-pagination" aria-label="Conversation pages">
+      <button
+        className="button subtle"
+        disabled={loading || !page.older}
+        onClick={() => changeWindow({ before: page.older })}
+      >
+        Older conversations
+      </button>
+      <span role="status">
+        {page.items?.length || 0} of {page.total} conversations
+      </span>
+      <button
+        className="button subtle"
+        disabled={loading || !page.newer}
+        onClick={() => changeWindow({ after: page.newer })}
+      >
+        Newer conversations
+      </button>
+      {latest && (
+        <button
+          className="button subtle"
+          disabled={loading}
+          onClick={() => changeWindow({})}
+        >
+          Latest conversations
+        </button>
+      )}
+    </nav>
+  );
+}
 function ChannelStream({
   channel,
+  pagination,
+  positionKey,
+  latestPage,
+  onLatest,
   threads,
   loading,
   data,
@@ -2298,7 +2386,7 @@ function ChannelStream({
     initialized = useRef(false),
     pending = useRef(null);
   const record = useRef(
-    positions.get(channel.id) || {
+    positions.get(positionKey) || {
       top: 0,
       pinned: true,
       anchorId: null,
@@ -2328,7 +2416,7 @@ function ChannelStream({
       anchorId: anchor?.id || null,
       offset: anchor ? anchor.getBoundingClientRect().top - top : 0,
     };
-    positions.set(channel.id, { ...record.current });
+    positions.set(positionKey, { ...record.current });
     setAway(!record.current.pinned);
   }
   function restore() {
@@ -2396,8 +2484,8 @@ function ChannelStream({
   return (
     <section className="channel-stream" aria-label={`Channel ${channel.name}`}>
       <div className="channel-stream-meta">
-        Oldest to newest ·{" "}
-        {loading ? "Updating…" : `${items.length} conversations`}
+        Oldest to newest · {loading ? "Updating…" : "50 conversations per page"}
+        {pagination}
       </div>
       <div
         className="channel-history"
@@ -2451,10 +2539,18 @@ function ChannelStream({
                 </button>
                 <div className="channel-message">
                   <RichText>
-                    {t.body ||
+                    {t.body?.slice(0, 2000) ||
                       "Open this conversation to view its attachments."}
                   </RichText>
                 </div>
+                {t.body?.length > 2000 && (
+                  <button
+                    className="channel-reply-link channel-full-link"
+                    onClick={() => openThread(t.id)}
+                  >
+                    Read full conversation
+                  </button>
+                )}
                 <button
                   className="channel-reply-link"
                   onClick={() => openThread(t.id)}
@@ -2469,10 +2565,14 @@ function ChannelStream({
           ))}
         </div>
       </div>
-      {away && (
+      {(away || !latestPage) && (
         <button
           className="channel-jump"
           onClick={() => {
+            if (!latestPage) {
+              onLatest();
+              return;
+            }
             record.current.pinned = true;
             restore();
             history.current.focus({ preventScroll: true });
@@ -3347,6 +3447,7 @@ function ModalRouter({
   act,
   notify,
   openThread,
+  onThreadCreated,
 }) {
   const [busy, setBusy] = useState(false),
     [error, setError] = useState("");
@@ -3511,11 +3612,7 @@ function ModalRouter({
             users={data.users}
             act={act}
             notify={notify}
-            afterPost={(r) => {
-              close();
-              openThread(r.id);
-              notify("Message sent");
-            }}
+            afterPost={onThreadCreated}
           />
         </Dialog>
       );

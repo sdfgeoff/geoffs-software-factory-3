@@ -698,3 +698,11 @@ recovery. API tests cover journal gaps/restarts, authentication, filter matching
 failed mutations, idempotent retries and payload exclusion. Scale measurement
 methodology and observed limits are recorded in
 [`docs/benchmarks/scoped-refresh.md`](docs/benchmarks/scoped-refresh.md).
+
+Conversation lists and channel history use 50-conversation pages with older,
+newer and latest controls. Counts include all matching conversations; Board
+columns show matching totals across pages. Channel previews link to the full
+conversation after 2,000 characters. See [bounded-page measurements and
+reproduction](docs/benchmarks/thread-pages.md). In environments with a `noexec`
+`/tmp`, run tests with `TMPDIR` pointing to an executable temporary directory;
+several existing tests execute synthetic Git hooks and command fixtures there.

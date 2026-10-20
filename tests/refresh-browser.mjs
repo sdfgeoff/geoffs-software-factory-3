@@ -44,11 +44,11 @@ test(
     });
     const full = () =>
       requests.filter(
-        (u) => u.pathname === "/api/threads" && !u.searchParams.has("ids"),
+        (u) => u.pathname === "/api/threads" && !u.searchParams.has("paged"),
       );
     const patches = () =>
       requests.filter(
-        (u) => u.pathname === "/api/threads" && u.searchParams.has("ids"),
+        (u) => u.pathname === "/api/threads" && u.searchParams.has("paged"),
       );
     const detail = () =>
       requests.filter((u) => u.pathname === "/api/threads/510");
@@ -63,9 +63,9 @@ test(
         password: "refresh-browser-password",
       });
       await page.goto(url);
-      await expect(page.locator(".thread-row")).toHaveCount(510);
+      await expect(page.locator(".thread-row")).toHaveCount(50);
       await page.waitForTimeout(500);
-      assert.equal(full().length, 2, "initial paginated load");
+      assert.equal(patches().length, 1, "initial bounded page load");
       requests.length = 0;
       await page.waitForTimeout(21000);
       assert.ok(
@@ -82,7 +82,7 @@ test(
         .getByRole("button", { name: /general/ })
         .first()
         .click();
-      await expect(page.locator(".channel-entry")).toHaveCount(510);
+      await expect(page.locator(".channel-entry")).toHaveCount(50);
       await page.locator("#new-thread-message").fill("Local scoped message");
       await page.waitForTimeout(400);
       requests.length = 0;
@@ -176,9 +176,9 @@ test(
         await gate;
         await route.fulfill({ response });
       };
-      await page.route("**/api/threads?ids=*", delaySummary);
+      await page.route("**/api/threads?paged=*", delaySummary);
       const patch = async (body) => {
-        const r = await context.request.patch(url + "/api/threads/1", {
+        const r = await context.request.patch(url + "/api/threads/510", {
           data: { body },
         });
         assert.equal(r.status(), 200);
@@ -186,15 +186,19 @@ test(
       await patch("Earlier summary snapshot");
       await firstResponse;
       await patch("Newest summary wins");
-      await expect(page.locator(".channel-entry").first()).toContainText(
-        "Newest summary wins",
-      );
+      await expect(
+        page
+          .locator(".channel-entry")
+          .filter({ hasText: "Refresh sample 510" }),
+      ).toContainText("Newest summary wins");
       release();
       await page.waitForTimeout(400);
-      await expect(page.locator(".channel-entry").first()).toContainText(
-        "Newest summary wins",
-      );
-      await page.unroute("**/api/threads?ids=*", delaySummary);
+      await expect(
+        page
+          .locator(".channel-entry")
+          .filter({ hasText: "Refresh sample 510" }),
+      ).toContainText("Newest summary wins");
+      await page.unroute("**/api/threads?paged=*", delaySummary);
       requests.length = 0;
       // Close the actual server stream. The reconnect revision check must recover
       // a mutation committed before the browser's EventSource reconnects.
@@ -213,8 +217,8 @@ test(
       requests.length = 0;
       // A broad metadata change uses authoritative recovery, preserving the draft.
       await post("/channels", { name: "recovery-metadata" });
-      await expect.poll(() => full().length, { timeout: 25000 }).toBe(2);
-      await expect(page.locator(".channel-entry")).toHaveCount(512);
+      await expect.poll(() => patches().length, { timeout: 25000 }).toBe(1);
+      await expect(page.locator(".channel-entry")).toHaveCount(50);
       await expect(page.locator("#new-thread-message")).toHaveValue(
         "Retained unsent draft",
       );

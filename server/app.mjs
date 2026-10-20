@@ -562,6 +562,74 @@ export function createApp({
         .replace(/[\\%_]/g, "\\$&")}%`;
       args.push(q, q, q);
     }
+    if (req.query.paged === "1") {
+      if (req.query.status) {
+        clauses.push("t.status_id=?");
+        args.push(positive.parse(req.query.status));
+      }
+      const where = clauses.length ? " WHERE " + clauses.join(" AND ") : "";
+      const counts = db
+        .prepare(
+          "SELECT t.status_id,COUNT(*) AS count FROM threads t" +
+            where +
+            " GROUP BY t.status_id",
+        )
+        .all(...args);
+      const total = counts.reduce((n, row) => n + row.count, 0);
+      const limit = z.coerce
+        .number()
+        .int()
+        .min(1)
+        .max(100)
+        .default(50)
+        .parse(req.query.limit);
+      const direction = req.query.after ? "after" : "before";
+      const cursor = req.query.after || req.query.before;
+      const pageClauses = [...clauses],
+        pageArgs = [...args];
+      if (cursor) {
+        const [stamp, id] = z
+          .tuple([z.string().min(1).max(40), positive])
+          .parse(String(cursor).split("|"));
+        pageClauses.push(
+          `(t.created_at,t.id) ${direction === "after" ? ">" : "<"} (?,?)`,
+        );
+        pageArgs.push(stamp, id);
+      }
+      const pageWhere = pageClauses.length
+        ? " WHERE " + pageClauses.join(" AND ")
+        : "";
+      let items = db
+        .prepare(
+          threadQuery +
+            pageWhere +
+            ` ORDER BY t.created_at ${direction === "after" ? "ASC" : "DESC"},t.id ${direction === "after" ? "ASC" : "DESC"} LIMIT ?`,
+        )
+        .all(...pageArgs, limit);
+      if (direction === "after") items.reverse();
+      const boundary = (item, comparison) =>
+        item &&
+        !!db
+          .prepare(
+            "SELECT 1 FROM threads t" +
+              where +
+              (where ? " AND " : " WHERE ") +
+              `(t.created_at,t.id) ${comparison} (?,?) LIMIT 1`,
+          )
+          .get(...args, item.created_at, item.id);
+      const encode = (item) => `${item.created_at}|${item.id}`;
+      const first = items[0],
+        last = items.at(-1);
+      return res.json({
+        items,
+        total,
+        statusCounts: Object.fromEntries(
+          counts.map((r) => [r.status_id, r.count]),
+        ),
+        older: boundary(last, "<") ? encode(last) : null,
+        newer: boundary(first, ">") ? encode(first) : null,
+      });
+    }
     const offset = Math.max(0, Math.min(100000, Number(req.query.offset) || 0));
     res.json(
       db
