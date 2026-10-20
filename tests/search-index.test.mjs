@@ -149,3 +149,73 @@ test("search index upgrades existing content atomically, tracks writes/deletes a
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("stored NUL preserves distinct LIKE filter and instr global-search semantics, including totals", () => {
+  const dir = mkdtempSync(join(tmpdir(), "tw-search-nul-"));
+  const db = openDatabase(join(dir, "db.sqlite"));
+  try {
+    bootstrap(db, { ADMIN_PASSWORD: "nul-test-password" });
+    const thread = db.prepare(
+      "INSERT INTO threads(channel_id,title,body,status_id,created_by,created_at,updated_at) VALUES(1,'plain','opening',1,1,'2026-01-01','2026-01-01') RETURNING id",
+    );
+    const hidden = thread.get().id,
+      visible = thread.get().id;
+    const insert = db.prepare(
+      "INSERT INTO replies(thread_id,author_id,body,created_at) VALUES(?,1,?,'2026-01-01') RETURNING id",
+    );
+    const hiddenReply = insert.get(hidden, "before\0needle 100%_needle").id;
+    const visibleReply = insert.get(visible, "normal needle 100%_needle").id;
+    for (const q of ["needle", "100%_needle", "before", "be"]) {
+      const pattern = "%" + q.replace(/[\\%_]/g, "\\$&") + "%";
+      const legacy = db
+        .prepare(
+          "SELECT DISTINCT thread_id FROM replies WHERE body LIKE ? ESCAPE '\\' ORDER BY thread_id DESC",
+        )
+        .all(pattern)
+        .map((r) => r.thread_id);
+      assert.deepEqual(
+        listThreads(db, { q }).map((t) => t.id),
+        legacy,
+        q,
+      );
+      const page = listThreads(db, { q, paged: "1", limit: "1" });
+      assert.equal(page.total, legacy.length, q);
+      assert.deepEqual(
+        page.items.map((t) => t.id),
+        legacy.slice(0, 1),
+        q,
+      );
+      assert.equal(
+        Object.values(page.statusCounts).reduce((n, x) => n + x, 0),
+        legacy.length,
+        q,
+      );
+    }
+    assert.deepEqual(
+      listThreads(db, { q: "needle", paged: "1" }).items.map((t) => t.id),
+      [visible],
+    );
+    assert.deepEqual(
+      new Set(
+        searchPlatform(db, { id: 1, admin: 1 }, { q: "needle" })
+          .results.filter((r) => r.kind === "reply")
+          .map((r) => r.id),
+      ),
+      new Set([hiddenReply, visibleReply]),
+    );
+    db.prepare("UPDATE replies SET body=? WHERE id=?").run(
+      "needle before\0after",
+      hiddenReply,
+    );
+    assert.equal(listThreads(db, { q: "needle", paged: "1" }).total, 2);
+    assert.equal(listThreads(db, { q: "after", paged: "1" }).total, 0);
+    assert.ok(
+      searchPlatform(db, { id: 1, admin: 1 }, { q: "after" }).results.some(
+        (r) => r.id === hiddenReply && r.kind === "reply",
+      ),
+    );
+  } finally {
+    db.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

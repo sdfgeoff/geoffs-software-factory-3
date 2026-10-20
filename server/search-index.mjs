@@ -55,6 +55,7 @@ export function replyBodyCandidates(db, q, needed) {
 }
 
 export function replyTextFilter(db, q) {
+  const pattern = "%" + q.replace(/[\\%_]/g, "\\$&") + "%";
   const match = trigramQuery(db, q);
   if (match) {
     const hits = db
@@ -66,9 +67,10 @@ export function replyTextFilter(db, q) {
       const ids = hits.map((r) => r.rowid);
       return {
         sql: ids.length
-          ? `t.id IN (SELECT thread_id FROM replies WHERE id IN (${ids.map(() => "?").join(",")}))`
+          ? `t.id IN (SELECT thread_id FROM replies WHERE id IN (${ids.map(() => "?").join(",")}) AND body LIKE ? ESCAPE '\\')`
           : "0",
-        args: ids,
+        // FTS sees text after a stored NUL; LIKE deliberately does not.
+        args: ids.length ? [...ids, pattern] : [],
       };
     }
   }
@@ -76,7 +78,7 @@ export function replyTextFilter(db, q) {
   // of enumerating every posting. Short literals retain the legacy fallback.
   return {
     sql: "EXISTS(SELECT 1 FROM replies r WHERE r.thread_id=t.id AND r.body LIKE ? ESCAPE '\\')",
-    args: ["%" + q.replace(/[\\%_]/g, "\\$&") + "%"],
+    args: [pattern],
   };
 }
 

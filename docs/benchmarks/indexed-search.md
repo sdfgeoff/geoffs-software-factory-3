@@ -13,8 +13,11 @@ filter retains its original literal behavior, rather than acquiring ID syntax.
 Schema v9 adds an FTS5 trigram index of SQLite-lowered reply bodies using an
 external-content view, plus indexes for recent replies and scheduled-event lookup.
 [SQLite's trigram tokenizer](https://www.sqlite.org/fts5.html#the_trigram_tokenizer)
-provides substring candidates. Quoted parameters and case-sensitive literal trigrams preserve candidates;
-global results retain the existing literal check. Triggers maintain the index in the same transaction as
+provides substring candidates. Quoted parameters and case-sensitive literal trigrams preserve candidates.
+Global results retain the original `instr` predicate; indexed thread-filter
+candidates also pass the original escaped `LIKE` predicate. These differ for
+stored NUL characters: `LIKE` stops at NUL, while `instr` can find text after it.
+The index must not erase that distinction, including in totals and pagination. Triggers maintain the index in the same transaction as
 insert/edit/delete; thread title edits need no denormalized reply rewrite.
 
 Global search probes recent replies and then uses indexed candidates if that
@@ -79,22 +82,22 @@ The data volume reproduces #12's cardinalities with simpler synthetic text. The
 original pre-optimization measurements are historical context, not a controlled
 before/after run of this implementation.
 
-Measured on Node 24.22.0 / SQLite 3.53.4, one warm shared-host run.
+Measured on Node 24.22.0 / SQLite 3.53.4, one warm shared-host run after the stored-NUL correction.
 
 | Query | Endpoint | Median | Maximum | Maximum simultaneous bootstrap |
 | --- | --- | ---: | ---: | ---: |
-| unique | global | 8.8 ms | 9.6 ms | 118.8 ms |
-| unique | threads | 7.0 ms | 7.2 ms | 116.2 ms |
-| common | global | 6.9 ms | 7.2 ms | 118.6 ms |
-| common | threads | 163.6 ms | 164.8 ms | 121.6 ms |
-| common-title | global | 21.8 ms | 22.1 ms | 118.1 ms |
-| common-title | threads | 111.3 ms | 200.2 ms | 117.7 ms |
-| absent | global | 6.6 ms | 6.6 ms | 124.6 ms |
-| absent | threads | 4.0 ms | 4.3 ms | 119.6 ms |
-| ID | global | 7.8 ms | 7.9 ms | 116.3 ms |
-| ID | threads | 3.7 ms | 3.8 ms | 129.2 ms |
+| unique | global | 9.5 ms | 9.8 ms | 126.5 ms |
+| unique | threads | 7.1 ms | 7.6 ms | 121.6 ms |
+| common | global | 7.5 ms | 8.2 ms | 119.4 ms |
+| common | threads | 172.1 ms | 180.4 ms | 126.0 ms |
+| common-title | global | 23.5 ms | 24.1 ms | 124.0 ms |
+| common-title | threads | 118.9 ms | 132.6 ms | 130.0 ms |
+| absent | global | 7.0 ms | 7.5 ms | 117.0 ms |
+| absent | threads | 4.1 ms | 5.4 ms | 132.9 ms |
+| ID | global | 8.7 ms | 10.5 ms | 127.4 ms |
+| ID | threads | 4.7 ms | 4.8 ms | 125.6 ms |
 
-Migration: 83.2 seconds; checkpointed database 0.96 GB before / 2.41 GB after.
-Four concurrent search/filter callers plus bootstrap completed in 289.8 ms; bootstrap took 117.9 ms.
+Migration: 83.0 seconds; checkpointed database 0.96 GB before / 2.41 GB after.
+Four concurrent search/filter callers plus bootstrap completed in 296.7 ms; bootstrap took 124.1 ms.
 
-Global first-call latency (including lazy reader startup) was retained separately in [the raw report](indexed-search.json). The ID row for the thread filter is a literal absent query, not an ID lookup; exact-ID lookup belongs to global search. All proposed local budgets passed. Tests also verify index visibility after HTTP create/edit, rollback/delete consistency, migration idempotence, title/body ranking overlap, literal punctuation/Unicode, private reminders/admin boundaries, and queue/cancellation/deadline behavior.
+Global first-call latency (including lazy reader startup) was retained separately in [the raw report](indexed-search.json). The ID row for the thread filter is a literal absent query, not an ID lookup; exact-ID lookup belongs to global search. All proposed local budgets passed. Tests also verify index visibility after HTTP create/edit, rollback/delete consistency, migration idempotence, title/body ranking overlap, literal punctuation/Unicode/stored-NUL parity, private reminders/admin boundaries, and queue/cancellation/deadline behavior.

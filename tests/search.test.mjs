@@ -274,6 +274,20 @@ test("search readers see committed create/edit changes and retain HTTP validatio
     (await filtered.json()).items.map((t) => t.id),
     [thread.id],
   );
+  await mutate(`/replies/${reply.id}`, "PATCH", {
+    body: "prefix\0hidden-api-sentinel",
+  });
+  assert.equal(
+    (await search("hidden-api-sentinel")).results[0].reply_id,
+    reply.id,
+  );
+  const nulFiltered = await fetch(
+    url + "/api/threads?paged=1&q=hidden-api-sentinel",
+    { headers: { Cookie: adminCookie } },
+  );
+  const nulPage = await nulFiltered.json();
+  assert.equal(nulPage.total, 0);
+  assert.deepEqual(nulPage.items, []);
   const invalid = await search("test", adminCookie, { limit: 101 });
   assert.equal(invalid.status, 400);
   assert.match(invalid.error, /limit:/);
