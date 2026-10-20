@@ -743,3 +743,10 @@ HTTP/network/timeout failures and rejection of unexpected internal columns.
 The serial API/protocol suite and all 16 browser scenarios were run for this
 change; Compose execution is unavailable in this environment. Result-validation
 CPU overhead has not been benchmarked at scale.
+
+Search uses a schema-v9 SQLite FTS5 trigram index and a bounded pool of read-only
+search workers. Literal matching and permissions are preserved; very short queries
+can still require scans, and overload/deadline failures return 503 with guidance.
+The first upgrade builds the index before listening and needs extra database/WAL
+space. Back up before upgrading and allow a maintenance window for large existing
+databases. See [search migration costs, local latency budgets and reproduction](docs/benchmarks/indexed-search.md).

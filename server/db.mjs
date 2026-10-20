@@ -1,3 +1,4 @@
+import { installSearchIndex } from "./search-index.mjs";
 import { DatabaseSync } from "node:sqlite";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
@@ -86,6 +87,10 @@ export function openDatabase(path) {
       CREATE TABLE IF NOT EXISTS agent_activity_links(activity_id INTEGER NOT NULL REFERENCES agent_activity(id) ON DELETE CASCADE,thread_id INTEGER NOT NULL REFERENCES threads(id),kind TEXT NOT NULL CHECK(kind IN ('tool','wake')),PRIMARY KEY(activity_id,thread_id,kind));
       CREATE INDEX IF NOT EXISTS agent_activity_thread ON agent_activity_links(thread_id,kind,activity_id);
     `);
+    if (db.prepare("PRAGMA user_version").get().user_version < 9) {
+      installSearchIndex(db);
+      db.exec("PRAGMA user_version=9");
+    }
     if (db.prepare("PRAGMA user_version").get().user_version < 8)
       db.exec("PRAGMA user_version=8");
     if (db.prepare("PRAGMA user_version").get().user_version < 7)
