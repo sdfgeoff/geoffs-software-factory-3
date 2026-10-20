@@ -1,0 +1,305 @@
+{
+  "environment": {
+    "node": "v24.22.0",
+    "platform": "linux",
+    "arch": "x64"
+  },
+  "notes": [
+    "Warm local synthetic measurements, not a production SLA.",
+    "Before/after share the same current application code and copied dataset; before drops only the two new indexes.",
+    "One unrecorded warm-up per API. Five measured sequential requests per endpoint.",
+    "Write timings include committed event+notification batches; cleanup is excluded. Three batches of 1000."
+  ],
+  "phases": {
+    "before": {
+      "storage": {
+        "file_bytes": 4581613568,
+        "allocated_bytes": 4539785216,
+        "free_pages": 10212,
+        "page_size": 4096
+      },
+      "plans": {
+        "inbox": [
+          {
+            "id": 9,
+            "parent": 0,
+            "notused": 62,
+            "detail": "SEARCH n USING INDEX notification_inbox (user_id=?)"
+          },
+          {
+            "id": 16,
+            "parent": 0,
+            "notused": 45,
+            "detail": "SEARCH e USING INTEGER PRIMARY KEY (rowid=?)"
+          },
+          {
+            "id": 19,
+            "parent": 0,
+            "notused": 45,
+            "detail": "SEARCH u USING INTEGER PRIMARY KEY (rowid=?)"
+          },
+          {
+            "id": 22,
+            "parent": 0,
+            "notused": 45,
+            "detail": "SEARCH c USING INTEGER PRIMARY KEY (rowid=?) LEFT-JOIN"
+          },
+          {
+            "id": 52,
+            "parent": 0,
+            "notused": 0,
+            "detail": "USE TEMP B-TREE FOR ORDER BY"
+          }
+        ],
+        "unread": [
+          {
+            "id": 4,
+            "parent": 0,
+            "notused": 62,
+            "detail": "SEARCH notifications USING INDEX notification_inbox (user_id=?)"
+          }
+        ],
+        "worker": [
+          {
+            "id": 5,
+            "parent": 0,
+            "notused": 62,
+            "detail": "SEARCH notifications USING INDEX notification_inbox (user_id=? AND accepted_at=?)"
+          }
+        ]
+      },
+      "api": {
+        "/inbox": {
+          "n": 5,
+          "median_ms": 7295.789013000001,
+          "max_ms": 7321.484946000004,
+          "samples_ms": [
+            7297.700117999997,
+            7268.111976,
+            7295.789013000001,
+            7321.484946000004,
+            7286.125495
+          ],
+          "bytes": 198925
+        },
+        "/bootstrap": {
+          "n": 5,
+          "median_ms": 244.39607799999794,
+          "max_ms": 244.96925600000395,
+          "samples_ms": [
+            244.86581000000297,
+            243.4628359999988,
+            244.39607799999794,
+            242.93107800000143,
+            244.96925600000395
+          ],
+          "bytes": 7362
+        }
+      },
+      "other_recipient": {
+        "status": 200,
+        "rows": 30,
+        "isolated": true
+      },
+      "committed_1000_event_notification_pairs": {
+        "n": 3,
+        "median_ms": 8.095274999999674,
+        "max_ms": 8.66207199999917,
+        "samples_ms": [
+          8.66207199999917,
+          8.095274999999674,
+          8.003192999996827
+        ]
+      },
+      "read_state_rows": 1000,
+      "mark_1000_read": {
+        "n": 3,
+        "median_ms": 11.21420699999726,
+        "max_ms": 12.176750999999058,
+        "samples_ms": [
+          10.986532999995688,
+          11.21420699999726,
+          12.176750999999058
+        ]
+      },
+      "restore_1000_unread": {
+        "n": 3,
+        "median_ms": 10.675342999995337,
+        "max_ms": 16.011206000002858,
+        "samples_ms": [
+          10.675342999995337,
+          10.644967000000179,
+          16.011206000002858
+        ]
+      },
+      "indexes": [
+        {
+          "name": "sqlite_autoindex_notifications_1",
+          "sql": null
+        },
+        {
+          "name": "notification_inbox",
+          "sql": "CREATE INDEX notification_inbox ON notifications(user_id,accepted_at,id)"
+        }
+      ]
+    },
+    "after": {
+      "storage": {
+        "file_bytes": 4581670912,
+        "allocated_bytes": 4581670912,
+        "free_pages": 0,
+        "page_size": 4096
+      },
+      "plans": {
+        "inbox": [
+          {
+            "id": 9,
+            "parent": 0,
+            "notused": 61,
+            "detail": "SEARCH n USING INDEX notification_latest (user_id=?)"
+          },
+          {
+            "id": 16,
+            "parent": 0,
+            "notused": 45,
+            "detail": "SEARCH e USING INTEGER PRIMARY KEY (rowid=?)"
+          },
+          {
+            "id": 19,
+            "parent": 0,
+            "notused": 45,
+            "detail": "SEARCH u USING INTEGER PRIMARY KEY (rowid=?)"
+          },
+          {
+            "id": 22,
+            "parent": 0,
+            "notused": 45,
+            "detail": "SEARCH c USING INTEGER PRIMARY KEY (rowid=?) LEFT-JOIN"
+          }
+        ],
+        "unread": [
+          {
+            "id": 4,
+            "parent": 0,
+            "notused": 61,
+            "detail": "SEARCH notifications USING INDEX notification_unread (user_id=?)"
+          }
+        ],
+        "worker": [
+          {
+            "id": 5,
+            "parent": 0,
+            "notused": 61,
+            "detail": "SEARCH notifications USING INDEX notification_inbox (user_id=? AND accepted_at=?)"
+          }
+        ]
+      },
+      "api": {
+        "/inbox": {
+          "n": 5,
+          "median_ms": 2.8970789999948465,
+          "max_ms": 3.5346669999998994,
+          "samples_ms": [
+            3.5346669999998994,
+            2.8970789999948465,
+            3.238774999997986,
+            2.6522320000003674,
+            2.797192999998515
+          ],
+          "bytes": 198925
+        },
+        "/bootstrap": {
+          "n": 5,
+          "median_ms": 12.992711999999301,
+          "max_ms": 13.416502000000037,
+          "samples_ms": [
+            13.016114999998535,
+            12.68148199999996,
+            13.416502000000037,
+            12.992711999999301,
+            12.733127999999851
+          ],
+          "bytes": 7362
+        }
+      },
+      "other_recipient": {
+        "status": 200,
+        "rows": 30,
+        "isolated": true
+      },
+      "committed_1000_event_notification_pairs": {
+        "n": 3,
+        "median_ms": 9.140964999998687,
+        "max_ms": 9.186399000005622,
+        "samples_ms": [
+          9.140964999998687,
+          9.186399000005622,
+          9.11613799999759
+        ]
+      },
+      "read_state_rows": 1000,
+      "mark_1000_read": {
+        "n": 3,
+        "median_ms": 13.780159000001731,
+        "max_ms": 14.364057000006142,
+        "samples_ms": [
+          13.228471000002173,
+          13.780159000001731,
+          14.364057000006142
+        ]
+      },
+      "restore_1000_unread": {
+        "n": 3,
+        "median_ms": 13.615593000002264,
+        "max_ms": 13.723022999998648,
+        "samples_ms": [
+          13.615593000002264,
+          13.723022999998648,
+          13.086316000000807
+        ]
+      },
+      "indexes": [
+        {
+          "name": "sqlite_autoindex_notifications_1",
+          "sql": null
+        },
+        {
+          "name": "notification_inbox",
+          "sql": "CREATE INDEX notification_inbox ON notifications(user_id,accepted_at,id)"
+        },
+        {
+          "name": "notification_latest",
+          "sql": "CREATE INDEX notification_latest ON notifications(user_id,id)"
+        },
+        {
+          "name": "notification_unread",
+          "sql": "CREATE INDEX notification_unread ON notifications(user_id) WHERE read_at IS NULL"
+        }
+      ]
+    }
+  },
+  "heavy_recipient": {
+    "notifications": 3000000,
+    "unread": 300000
+  },
+  "counts": {
+    "threads": 10000,
+    "replies": 3000000,
+    "events": 3000000,
+    "notifications": 3000030
+  },
+  "pre_migration_storage": {
+    "file_bytes": 4581613568,
+    "allocated_bytes": 4539842560,
+    "free_pages": 10198,
+    "page_size": 4096
+  },
+  "migration_ms": 1379.308272999995,
+  "post_migration_storage": {
+    "file_bytes": 4581670912,
+    "allocated_bytes": 4581670912,
+    "free_pages": 0,
+    "page_size": 4096
+  },
+  "index_allocated_bytes": 41828352
+}

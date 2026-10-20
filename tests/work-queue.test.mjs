@@ -447,7 +447,7 @@ test("v4 database migration creates queue tables while preserving repositories, 
   db.close();
   db = openDatabase(path);
   try {
-    assert.equal(db.prepare("PRAGMA user_version").get().user_version, 5);
+    assert.equal(db.prepare("PRAGMA user_version").get().user_version, 6);
     assert.equal(
       db.prepare("SELECT name FROM repositories").get().name,
       "Existing",

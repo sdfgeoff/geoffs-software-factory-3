@@ -73,6 +73,12 @@ export function openDatabase(path) {
       CREATE TABLE IF NOT EXISTS queue_signals(kind TEXT NOT NULL,entity_id INTEGER NOT NULL,revision INTEGER NOT NULL DEFAULT 1,PRIMARY KEY(kind,entity_id));
       CREATE TABLE IF NOT EXISTS queue_wakes(user_id INTEGER NOT NULL REFERENCES users(id),kind TEXT NOT NULL,entity_id INTEGER NOT NULL,revision TEXT NOT NULL,PRIMARY KEY(user_id,kind,entity_id,revision));
     `);
+    // Human inbox ordering and unread counts need independent access paths;
+    // retain notification_inbox for worker accepted_at/oldest-first delivery.
+    db.exec(`CREATE INDEX IF NOT EXISTS notification_latest ON notifications(user_id,id);
+      CREATE INDEX IF NOT EXISTS notification_unread ON notifications(user_id) WHERE read_at IS NULL;`);
+    if (db.prepare("PRAGMA user_version").get().user_version < 6)
+      db.exec("PRAGMA user_version=6");
     if (db.prepare("PRAGMA user_version").get().user_version < 5)
       db.exec("PRAGMA user_version=5");
     if (db.prepare("PRAGMA user_version").get().user_version < 4)
