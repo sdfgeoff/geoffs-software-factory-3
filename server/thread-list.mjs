@@ -1,27 +1,23 @@
-import { z } from "zod";
+import { threadListFields, threadCursorParts } from "../shared/requests.mjs";
 import { replyTextFilter } from "./search-index.mjs";
-const positive = z.coerce.number().int().positive();
+const fields = threadListFields();
 export const threadQuery = `SELECT t.*,c.name AS channel_name,u.name AS author_name,u.username AS author_username,u.kind AS author_kind,a.name AS assignee_name,a.kind AS assignee_kind,s.name AS status_name,s.color AS status_color,(SELECT COUNT(*) FROM replies r WHERE r.thread_id=t.id) AS reply_count FROM threads t JOIN channels c ON c.id=t.channel_id JOIN users u ON u.id=t.created_by LEFT JOIN users a ON a.id=t.assignee_id JOIN statuses s ON s.id=t.status_id`;
 
 export function listThreads(db, query) {
   const clauses = [];
   const args = [];
   if (query.ids !== undefined) {
-    const ids = [
-      ...new Set(
-        z.array(positive).min(1).max(200).parse(String(query.ids).split(",")),
-      ),
-    ];
+    const ids = [...new Set(fields.ids.parse(String(query.ids).split(",")))];
     clauses.push(`t.id IN (${ids.map(() => "?").join(",")})`);
     args.push(...ids);
   }
   if (query.channel) {
     clauses.push("t.channel_id=?");
-    args.push(positive.parse(query.channel));
+    args.push(fields.channel.parse(query.channel));
   }
   if (query.assignee) {
     clauses.push("t.assignee_id=?");
-    args.push(positive.parse(query.assignee));
+    args.push(fields.assignee.parse(query.assignee));
   }
   if (query.q) {
     const raw = String(query.q).slice(0, 200);
@@ -35,7 +31,7 @@ export function listThreads(db, query) {
   if (query.paged === "1") {
     if (query.status) {
       clauses.push("t.status_id=?");
-      args.push(positive.parse(query.status));
+      args.push(fields.status.parse(query.status));
     }
     const where = clauses.length ? " WHERE " + clauses.join(" AND ") : "";
     const counts = db
@@ -46,21 +42,13 @@ export function listThreads(db, query) {
       )
       .all(...args);
     const total = counts.reduce((n, row) => n + row.count, 0);
-    const limit = z.coerce
-      .number()
-      .int()
-      .min(1)
-      .max(100)
-      .default(50)
-      .parse(query.limit);
+    const limit = fields.limit.parse(query.limit);
     const direction = query.after ? "after" : "before";
     const cursor = query.after || query.before;
     const pageClauses = [...clauses],
       pageArgs = [...args];
     if (cursor) {
-      const [stamp, id] = z
-        .tuple([z.string().min(1).max(40), positive])
-        .parse(String(cursor).split("|"));
+      const [stamp, id] = threadCursorParts.parse(String(cursor).split("|"));
       pageClauses.push(
         `(t.created_at,t.id) ${direction === "after" ? ">" : "<"} (?,?)`,
       );

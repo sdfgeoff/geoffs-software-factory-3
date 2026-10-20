@@ -1,3 +1,8 @@
+import {
+  httpRequests as requests,
+  requestId,
+  branchName,
+} from "../shared/requests.mjs";
 import { spawn } from "node:child_process";
 import { join } from "node:path";
 import { existsSync, rmSync } from "node:fs";
@@ -12,23 +17,7 @@ import {
   validateRepositoryUrl,
 } from "./git.mjs";
 
-const id = z.coerce.number().int().positive();
-const commit = z.string().regex(/^[a-f0-9]{40}$/, "Use a full commit SHA");
-const branchName = z
-  .string()
-  .min(1)
-  .max(150)
-  .regex(/^[a-zA-Z0-9][a-zA-Z0-9._/-]*$/)
-  .refine(
-    (v) =>
-      !v.includes("..") &&
-      !v.includes("//") &&
-      !v.includes("@{") &&
-      !v.endsWith("/") &&
-      !v.endsWith(".") &&
-      !v.split("/").some((s) => s.startsWith(".") || s.endsWith(".lock")),
-    "Invalid branch name",
-  );
+const id = requestId();
 export function gitIdentity(db, authorization) {
   if (!authorization?.startsWith("Basic ")) return null;
   const decoded = Buffer.from(authorization.slice(6), "base64").toString();
@@ -488,14 +477,7 @@ export function installOrchestration({
   });
   app.post("/api/repositories/:repositoryId/branches", async (req, res) => {
     capable(req.user, "can_work");
-    const input = z
-      .object({
-        name: branchName,
-        thread_ids: z.array(id).max(100).default([]),
-        base: commit.optional(),
-      })
-      .strict()
-      .parse(req.body);
+    const input = requests.createBranch.parse(req.body);
     await withRepo(req, res, async (r) => {
       if (input.name === r.main_branch)
         fail(400, "Main cannot be a managed working branch");
@@ -561,7 +543,7 @@ export function installOrchestration({
     capable(u, "can_work");
   };
   app.post("/api/branches/:id/link", (req, res) => {
-    const input = z.object({ thread_id: id }).strict().parse(req.body);
+    const input = requests.linkBranch.parse(req.body);
     mutate(req, res, () => {
       const b = branch(req.params.id);
       owner(b, req.user);
@@ -574,7 +556,7 @@ export function installOrchestration({
     });
   });
   app.post("/api/branches/:id/handoff", async (req, res) => {
-    const input = z.object({ owner_id: id }).strict().parse(req.body);
+    const input = requests.handoffBranch.parse(req.body);
     await withRepo(req, res, async () => {
       const b = branch(req.params.id);
       if (b.owner_id !== req.user.id && !req.user.admin)
@@ -604,7 +586,7 @@ export function installOrchestration({
     });
   });
   app.post("/api/branches/:id/dependencies", async (req, res) => {
-    const input = z.object({ depends_on_id: id }).strict().parse(req.body);
+    const input = requests.branchDependency.parse(req.body);
     await withRepo(req, res, async () =>
       mutate(req, res, () => {
         const b = branch(req.params.id);
@@ -640,7 +622,7 @@ export function installOrchestration({
   );
   for (const action of ["submit-review", "claim-review", "release-review"])
     app.post(`/api/branches/:id/${action}`, async (req, res) => {
-      const input = z.object({ commit }).strict().parse(req.body);
+      const input = requests.branchRevision.parse(req.body);
       await withRepo(req, res, async () => {
         const b = branch(req.params.id);
         if (b.head_commit !== input.commit)
@@ -679,16 +661,7 @@ export function installOrchestration({
     });
   app.post("/api/branches/:id/reviews", async (req, res) => {
     capable(req.user, "can_review");
-    const input = z
-      .object({
-        commit,
-        target_commit: commit.optional(),
-        decision: z.enum(["approved", "changes_requested"]),
-        body: z.string().max(50000).default(""),
-        require_human: z.boolean().default(false),
-      })
-      .strict()
-      .parse(req.body);
+    const input = requests.reviewBranch.parse(req.body);
     await withRepo(req, res, async (r) => {
       await reconcile(r, req.user.id);
       const b = branch(req.params.id);

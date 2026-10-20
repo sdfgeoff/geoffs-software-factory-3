@@ -104,7 +104,8 @@ test("real MCP advertises public result contracts and preserves legacy text/imag
       thread_id: thread.id,
       title: "",
     });
-    assert.equal(outcome(httpFailure).error.status, 400);
+    // Shared request contracts now reject this at the MCP boundary.
+    assert.equal(outcome(httpFailure).error.status, null);
     assert.equal(outcome(httpFailure).error.code, "VALIDATION_ERROR");
     assert.equal(outcome(httpFailure).error.retryable, false);
     assert.deepEqual(outcome(httpFailure).error.issues[0].path, ["title"]);

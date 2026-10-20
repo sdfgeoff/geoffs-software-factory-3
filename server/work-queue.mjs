@@ -1,9 +1,7 @@
-import { z } from "zod";
+import { httpRequests as requests, requestId } from "../shared/requests.mjs";
 import { now } from "./db.mjs";
-const id = z.coerce.number().int().positive();
-const prefsInput = z
-  .object({ notify_ready_work: z.boolean(), notify_ready_reviews: z.boolean() })
-  .strict();
+const id = requestId();
+const prefsInput = requests.workPreferences;
 export function installWorkQueue({
   app,
   db,
@@ -297,10 +295,7 @@ export function installWorkQueue({
     }),
   );
   app.post("/api/threads/:id/claim", (req, res) => {
-    const input = z
-      .object({ expected_updated_at: z.string().optional() })
-      .strict()
-      .parse(req.body || {});
+    const input = requests.claimTicket.parse(req.body || {});
     mutate(req, res, () => {
       const t = thread(req.params.id);
       if (!capabilities(req.user).can_work)
@@ -367,10 +362,7 @@ export function installWorkQueue({
     }),
   );
   app.post("/api/threads/:id/submit-work", (req, res) => {
-    const input = z
-      .object({ summary: z.string().max(50000).default("") })
-      .strict()
-      .parse(req.body || {});
+    const input = requests.submitWork.parse(req.body || {});
     mutate(req, res, () => {
       const t = thread(req.params.id);
       if (t.assignee_id !== req.user.id && !req.user.admin)
@@ -419,7 +411,9 @@ export function installWorkQueue({
     });
   });
   function ticketSubmission(req) {
-    const value = id.parse(req.body?.submission_id);
+    const { submission_id: value } = requests.ticketSubmission.parse(
+      req.body || {},
+    );
     const s =
       db
         .prepare(
@@ -468,7 +462,8 @@ export function installWorkQueue({
       if (!c || c.kind !== "review") fail(409, "No review claim to release");
       if (
         req.body?.submission_id !== undefined &&
-        id.parse(req.body.submission_id) !== c.submission_id
+        requests.releaseTicketReview.parse(req.body).submission_id !==
+          c.submission_id
       )
         fail(409, "Submission changed; refresh before releasing review");
       if (c.user_id !== req.user.id && !req.user.admin)
@@ -482,14 +477,7 @@ export function installWorkQueue({
     }),
   );
   app.post("/api/threads/:id/reviews", (req, res) => {
-    const input = z
-      .object({
-        submission_id: id,
-        decision: z.enum(["approved", "changes_requested"]),
-        body: z.string().max(50000).default(""),
-      })
-      .strict()
-      .parse(req.body);
+    const input = requests.reviewTicket.parse(req.body);
     mutate(req, res, () => {
       const s = ticketSubmission(req);
       claimTicketReview(req.user, s);
