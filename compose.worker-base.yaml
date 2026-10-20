@@ -1,0 +1,32 @@
+# Shared worker settings. Extend this service; do not launch it directly.
+services:
+  agent:
+    image: threadwork-agent:local
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.agent
+    init: true
+    restart: unless-stopped
+    read_only: true
+    tmpfs: [/tmp:mode=1777]
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    pids_limit: 512
+    shm_size: 256mb
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    healthcheck:
+      test:
+        [
+          CMD,
+          node,
+          -e,
+          "process.exit(Date.now()-require('node:fs').statSync('/state/state.json').mtimeMs<60000?0:1)",
+        ]
+      interval: 15s
+      timeout: 3s
+      start_period: 40s
+      retries: 3

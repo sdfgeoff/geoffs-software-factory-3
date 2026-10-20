@@ -18,7 +18,8 @@
     "test:codex": "node tests/codex-smoke.mjs",
     "format": "prettier --write server agent scripts tests web compose*.yaml package.json",
     "test:browser": "npm run build && node --test tests/browser.mjs",
-    "test:desktop": "node tests/desktop-smoke.mjs"
+    "test:desktop": "node tests/desktop-smoke.mjs",
+    "workers": "node --env-file-if-exists=.env scripts/workers.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.28.0",
