@@ -35,9 +35,9 @@ The Board action reuses the already loaded window and needs no list request.
 
 | View | First visible | Ready | Longest task | DOM elements | JS heap |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| All work | 450 ms | 460 ms | none ≥50 ms | 1,340 | 4.72 MiB |
-| Channel | 150 ms | 153 ms | 55 ms | 1,138 | 6.88 MiB |
-| Board | 95 ms | 97 ms | none ≥50 ms | 1,350 | 14.16 MiB |
+| All work | 437 ms | 445 ms | none ≥50 ms | 1,340 | 4.74 MiB |
+| Channel | 124 ms | 127 ms | 61 ms | 1,137 | 7.50 MiB |
+| Board | 88 ms | 90 ms | none ≥50 ms | 1,350 | 10.01 MiB |
 
 All work and channel each issued one 50-item list request. Original #12 measurements
 on pre-layout baseline `998645a` were 8.12/8.03 seconds and roughly 230k/160k DOM
@@ -48,7 +48,7 @@ attachment-heavy/real-device tests.
 
 Navigation checks cover adjacent older/newer pages, keyboard paging, draft
 retention, returning from a conversation to the older page, latest navigation,
-Board counts, and opening the oldest conversation directly. API checks traverse
+Board counts, opening the oldest conversation directly, expanding a long preview, and revealing a saved message after posting from filtered older history. API checks traverse
 tied-timestamp pages, preserve status/channel/assignee/search filters and totals,
 and ensure concurrent inserts do not duplicate older-page entries. Existing
 mobile/desktop reading-position and live-reply tests remain part of the suite.

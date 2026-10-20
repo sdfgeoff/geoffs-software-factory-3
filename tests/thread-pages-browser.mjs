@@ -27,6 +27,16 @@ test(
       SELECT id,'reply.created',1,thread_id,1,'{}',created_at FROM replies;
     INSERT INTO notifications(event_id,user_id) SELECT id,1 FROM events;
     COMMIT;`);
+    const newest = db
+      .prepare(
+        "SELECT id FROM threads ORDER BY created_at DESC,id DESC LIMIT 1",
+      )
+      .get().id;
+    db.prepare("UPDATE threads SET body=? WHERE id=?").run(
+      "Long preview content. ".repeat(200) +
+        "Complete opening message sentinel",
+      newest,
+    );
     const server = app.listen(0, "127.0.0.1");
     await new Promise((r) => server.once("listening", r));
     const url = `http://127.0.0.1:${server.address().port}`;
@@ -129,6 +139,17 @@ test(
             .click(),
         ".channel-entry",
       );
+      await page
+        .getByRole("button", { name: "Read full conversation", exact: true })
+        .click();
+      await expect(page.locator(".conversation-main")).toContainText(
+        "Complete opening message sentinel",
+      );
+      await page
+        .getByRole("button", { name: "Close thread", exact: true })
+        .click();
+      mkdirSync("test-results", { recursive: true });
+      await page.screenshot({ path: "test-results/thread-pages-channel.png" });
       const history = page.locator(".channel-history");
       await history.evaluate((el) => (el.scrollTop = 0));
       await page
@@ -184,6 +205,23 @@ test(
       await page
         .getByRole("button", { name: "Close thread", exact: true })
         .click();
+      await expect(page.locator(".channel-entry")).toHaveCount(50);
+      // Sending from filtered old history must reveal the saved message on the
+      // unfiltered latest page, rather than restore its previously visited page.
+      await page
+        .getByRole("button", { name: "Older conversations", exact: true })
+        .click();
+      await page
+        .getByPlaceholder("Search conversations…")
+        .fill("Scale conversation 00001");
+      await expect(page.locator(".channel-entry")).toHaveCount(1);
+      await page
+        .locator("#new-thread-message")
+        .fill("Saved after filtered older history");
+      await page.getByRole("button", { name: "Send", exact: true }).click();
+      await expect(page.locator(".channel-entry").last()).toContainText(
+        "Saved after filtered older history",
+      );
       await expect(page.locator(".channel-entry")).toHaveCount(50);
       mkdirSync("test-results", { recursive: true });
       writeFileSync(

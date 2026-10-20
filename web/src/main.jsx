@@ -1562,7 +1562,19 @@ function App() {
                           setSearch("");
                           setAssignee("");
                           setStatusFilter("");
-                          changeWindow({});
+                          const latestKey = JSON.stringify([
+                            channelId,
+                            "",
+                            "",
+                            "",
+                          ]);
+                          channelPositions.current.delete(
+                            `${channelId}:${latestKey}:{}`,
+                          );
+                          setThreadWindows((windows) => ({
+                            ...windows,
+                            [latestKey]: {},
+                          }));
                           notify("Message sent");
                         }}
                         textareaId="new-thread-message"
@@ -1606,7 +1618,19 @@ function App() {
                           setSearch("");
                           setAssignee("");
                           setStatusFilter("");
-                          changeWindow({});
+                          const latestKey = JSON.stringify([
+                            channelId,
+                            "",
+                            "",
+                            "",
+                          ]);
+                          channelPositions.current.delete(
+                            `${channelId}:${latestKey}:{}`,
+                          );
+                          setThreadWindows((windows) => ({
+                            ...windows,
+                            [latestKey]: {},
+                          }));
                           notify("Message sent");
                         }}
                       />
@@ -2654,7 +2678,7 @@ function ChannelStream({
                 </div>
                 {t.body?.length > 2000 && (
                   <button
-                    className="channel-reply-link"
+                    className="channel-reply-link channel-full-link"
                     onClick={() => openThread(t.id)}
                   >
                     Read full conversation

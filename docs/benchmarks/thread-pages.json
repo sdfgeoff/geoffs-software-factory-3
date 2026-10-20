@@ -13,33 +13,33 @@
   "metrics": [
     {
       "name": "all-work",
-      "visibleMs": 450.23851099999956,
-      "readyMs": 459.87444999999934,
+      "visibleMs": 437.1231800000005,
+      "readyMs": 444.78699699999925,
       "nodes": 1340,
       "maxLongTaskMs": 0,
-      "heapMiB": 4.7213897705078125,
+      "heapMiB": 4.742282867431641,
       "listRequests": [
-        "http://127.0.0.1:41057/api/threads?paged=1&limit=50"
+        "http://127.0.0.1:34651/api/threads?paged=1&limit=50"
       ]
     },
     {
       "name": "channel",
-      "visibleMs": 149.95426700000098,
-      "readyMs": 153.0165109999998,
-      "nodes": 1138,
-      "maxLongTaskMs": 55,
-      "heapMiB": 6.876346588134766,
+      "visibleMs": 124.44573800000035,
+      "readyMs": 127.38640400000077,
+      "nodes": 1137,
+      "maxLongTaskMs": 61,
+      "heapMiB": 7.501903533935547,
       "listRequests": [
-        "http://127.0.0.1:41057/api/threads?paged=1&limit=50&channel=1"
+        "http://127.0.0.1:34651/api/threads?paged=1&limit=50&channel=1"
       ]
     },
     {
       "name": "board",
-      "visibleMs": 94.54377599999862,
-      "readyMs": 97.34704799999963,
+      "visibleMs": 88.25853399999869,
+      "readyMs": 90.43885099999898,
       "nodes": 1350,
       "maxLongTaskMs": 0,
-      "heapMiB": 14.16293716430664,
+      "heapMiB": 10.013679504394531,
       "listRequests": []
     }
   ]

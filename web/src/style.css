@@ -4355,3 +4355,7 @@ code {
 .channel-stream-meta .thread-pagination {
   margin-bottom: 0;
 }
+
+.channel-full-link {
+  margin-right: 12px;
+}
