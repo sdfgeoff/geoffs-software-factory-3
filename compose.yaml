@@ -46,6 +46,12 @@ services:
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
     volumes:
       - server-data:/data
+      - type: bind
+        source: ${SSH_DIR:-${HOME}/.ssh}
+        target: /home/node/.ssh
+        read_only: true
+        bind:
+          create_host_path: false
     healthcheck:
       test:
         [

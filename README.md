@@ -258,9 +258,22 @@ explicit branch dependencies where needed.
 
 Absolute server-local repository paths are also supported, useful for testing or
 local bare repositories. Paths refer to the server container, not the browser's
-machine. SSH URLs require an operator-provided server SSH identity and verified
-known-hosts configuration; the default Compose configuration provisions neither.
-HTTPS token authentication is the simplest supported private-repository setup.
+machine. For SSH, Compose mounts the launching user's `~/.ssh` read-only at
+`/home/node/.ssh` in the server only; workers receive no SSH mount. Override the
+host directory with `SSH_DIR` in `.env`. The directory must already exist and
+its keys/config must be readable by the container's `node` user (UID 1000).
+Use `ssh://git@git.example.com/team/project.git` and leave the credential
+variable field empty. With `ssh://`, the hostname and repository path are
+separated by `/`; a colon after the hostname introduces a numeric port.
+The shorter `git@host:team/project.git` format is not currently accepted.
+
+The mounted directory supplies keys, SSH config, and verified `known_hosts`.
+Host SSH configuration using absolute host paths may need container-compatible
+paths. Interactive password/passphrase prompts and host SSH-agent forwarding
+are not configured. New host keys must be verified and added on the host;
+the server requires strict host-key checking and does not modify the mount.
+After changing the mount configuration, run `docker compose up -d server`.
+HTTPS token authentication remains available as described above.
 
 ### Work, hand off, review, merge
 
