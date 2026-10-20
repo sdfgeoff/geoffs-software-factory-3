@@ -198,7 +198,7 @@ function Avatar({ user, size = "normal" }) {
     </span>
   );
 }
-function RichText({ children }) {
+const RichText = React.memo(function RichText({ children }) {
   return (
     <div className="markdown">
       <Markdown
@@ -218,7 +218,7 @@ function RichText({ children }) {
       </Markdown>
     </div>
   );
-}
+});
 function Empty({ icon = MessageSquare, title, children, action }) {
   return (
     <div className="empty">
@@ -580,6 +580,12 @@ function GlobalSearch({ onClose, onChoose, refreshKey, query, setQuery }) {
   );
 }
 
+const RetainedView = React.memo(
+  function RetainedView({ render }) {
+    return render();
+  },
+  (before, after) => after.frozen,
+);
 function App() {
   const entry = useRef(readNavigation()).current;
   const [data, setData] = useState(null),
@@ -619,7 +625,10 @@ function App() {
     [inbox, setInbox] = useState([]),
     [schedules, setSchedules] = useState([]),
     [reminderOpen, setReminderOpen] = useState(false),
-    [refreshKey, setRefreshKey] = useState(0);
+    [refreshKey, setRefreshKey] = useState(0),
+    [fullListKey, setFullListKey] = useState(0),
+    [detailKey, setDetailKey] = useState(0),
+    [listDeltaKey, setListDeltaKey] = useState(0);
   const originFocus = useRef(null);
   const navigation = useRef(null);
   const applyNavigation = useRef(null);
@@ -742,12 +751,102 @@ function App() {
     setToast({ message, error });
     toastTimer.current = setTimeout(() => setToast(null), 5000);
   }, []);
-  const refresh = useCallback(() => setRefreshKey((k) => k + 1), []);
+  const syncVersion = useRef(null),
+    syncedUser = useRef(null),
+    syncBusy = useRef(false),
+    syncAgain = useRef(false),
+    syncTimer = useRef(null);
+  const pendingThreads = useRef(new Map()),
+    listRequested = useRef(null),
+    fullListInvalid = useRef(false),
+    detailInvalid = useRef(false),
+    bootstrapInvalid = useRef(false),
+    scope = useRef(null),
+    requestSync = useRef(() => {});
+  const listVisible = page === "work" && !selectedId && !searchOpen && !modal;
+  scope.current = { selectedId, listVisible, page };
+  async function synchronize() {
+    if (syncBusy.current) {
+      syncAgain.current = true;
+      return;
+    }
+    syncBusy.current = true;
+    const session = sessionVersion.current;
+    try {
+      const changes = await api(
+        "/sync?" + new URLSearchParams({ since: syncVersion.current || "" }),
+      );
+      if (session !== sessionVersion.current) return;
+      syncVersion.current = changes.version;
+      // Team presence is heartbeat-based, independent of durable events.
+      if (
+        changes.changed ||
+        scope.current.page === "team" ||
+        bootstrapInvalid.current
+      )
+        setRefreshKey((k) => k + 1);
+      if (!changes.changed) {
+        if (fullListInvalid.current && scope.current.listVisible)
+          setFullListKey((k) => k + 1);
+        else if (pendingThreads.current.size) setListDeltaKey((k) => k + 1);
+        if (detailInvalid.current && scope.current.selectedId)
+          setDetailKey((k) => k + 1);
+      }
+      if (changes.changed) {
+        if (changes.reset) {
+          pendingThreads.current.clear();
+          fullListInvalid.current = true;
+          setFullListKey((k) => k + 1);
+        }
+        for (const id of changes.threadIds)
+          pendingThreads.current.set(id, changes.version);
+        if (pendingThreads.current.size > 200) {
+          pendingThreads.current.clear();
+          fullListInvalid.current = true;
+          setFullListKey((k) => k + 1);
+        }
+        if (
+          scope.current.selectedId &&
+          (changes.reset ||
+            detailInvalid.current ||
+            changes.threadIds.includes(scope.current.selectedId))
+        )
+          setDetailKey((k) => k + 1);
+        setListDeltaKey((k) => k + 1);
+      }
+    } catch (e) {
+      if (session === sessionVersion.current) {
+        if (e.status === 401) load();
+        else notify(e.message, true);
+      }
+    } finally {
+      syncBusy.current = false;
+      if (syncAgain.current) {
+        syncAgain.current = false;
+        requestSync.current();
+      }
+    }
+  }
+  requestSync.current = () => {
+    if (syncTimer.current) return;
+    syncTimer.current = setTimeout(() => {
+      syncTimer.current = null;
+      synchronize();
+    }, 120);
+  };
+  const refresh = useCallback(() => requestSync.current(), []);
   const load = useCallback(async () => {
     const version = sessionVersion.current;
     try {
       const b = await api("/bootstrap");
       if (version !== sessionVersion.current) return;
+      if (syncedUser.current !== b.user.id) {
+        syncedUser.current = b.user.id;
+        syncVersion.current = b.sync_revision;
+        pendingThreads.current.clear();
+        fullListInvalid.current = false;
+      }
+      bootstrapInvalid.current = false;
       setData(b);
       setAuth("signedIn");
     } catch (e) {
@@ -758,7 +857,10 @@ function App() {
         setSchedules([]);
         setAuth("signedOut");
         setData(null);
-      } else notify(e.message, true);
+      } else {
+        bootstrapInvalid.current = true;
+        notify(e.message, true);
+      }
     }
   }, [notify]);
   useEffect(() => {
@@ -769,8 +871,10 @@ function App() {
     return () => clearTimeout(t);
   }, [query]);
   useEffect(() => {
-    if (auth !== "signedIn") return;
+    if (auth !== "signedIn" || !listVisible) return;
     let stale = false;
+    fullListInvalid.current = false;
+    listRequested.current = `${channelId}:${search}:${assignee}`;
     setLoading(true);
     const params = new URLSearchParams();
     if (channelId) params.set("channel", channelId);
@@ -780,6 +884,7 @@ function App() {
     const loadThreads = async () => {
       const result = [];
       while (!stale) {
+        if (!scope.current.listVisible) return null;
         params.set("offset", String(result.length));
         const batch = await api("/threads?" + params);
         result.push(...batch);
@@ -790,18 +895,85 @@ function App() {
     loadThreads()
       .then((t) => {
         if (!stale) {
+          if (!t) {
+            listRequested.current = null;
+            fullListInvalid.current = true;
+            return;
+          }
           setThreads(t);
+          loadedContext.current = `${channelId}:${search}:${assignee}`;
           setLoadedChannelId(channelId);
         }
       })
-      .catch((e) => notify(e.message, true))
+      .catch((e) => {
+        if (!stale) {
+          fullListInvalid.current = true;
+          listRequested.current = null;
+          notify(e.message, true);
+        }
+      })
       .finally(() => {
         if (!stale) setLoading(false);
       });
     return () => {
       stale = true;
     };
-  }, [auth, channelId, search, assignee, refreshKey]);
+  }, [auth, channelId, search, assignee, fullListKey]);
+  const listContext = `${channelId}:${search}:${assignee}`;
+  const loadedContext = useRef(null);
+  useEffect(() => {
+    if (
+      listVisible &&
+      ((loadedContext.current !== listContext &&
+        listRequested.current !== listContext) ||
+        fullListInvalid.current)
+    )
+      setFullListKey((k) => k + 1);
+  }, [listVisible, listContext]);
+  useEffect(() => {
+    if (
+      !listVisible ||
+      loading ||
+      fullListInvalid.current ||
+      !pendingThreads.current.size ||
+      loadedContext.current !== listContext
+    )
+      return;
+    let stale = false;
+    const ids = [...pendingThreads.current.keys()].slice(0, 200);
+    const versions = new Map(
+      ids.map((id) => [id, pendingThreads.current.get(id)]),
+    );
+    const params = new URLSearchParams({ ids: ids.join(",") });
+    if (channelId) params.set("channel", channelId);
+    if (search) params.set("q", search);
+    if (assignee) params.set("assignee", assignee);
+    api("/threads?" + params)
+      .then((matches) => {
+        if (stale) return;
+        const changed = new Set(
+          ids.filter(
+            (id) => pendingThreads.current.get(id) === versions.get(id),
+          ),
+        );
+        for (const id of changed) pendingThreads.current.delete(id);
+        setThreads((current) =>
+          [
+            ...current.filter((t) => !changed.has(t.id)),
+            ...matches.filter((t) => changed.has(t.id)),
+          ].sort(
+            (a, b) => b.created_at.localeCompare(a.created_at) || b.id - a.id,
+          ),
+        );
+        if (pendingThreads.current.size) setListDeltaKey((k) => k + 1);
+      })
+      .catch((e) => {
+        if (!stale) notify(e.message, true);
+      });
+    return () => {
+      stale = true;
+    };
+  }, [listVisible, loading, listDeltaKey, listContext]);
   useEffect(() => {
     if (!selectedId || auth !== "signedIn") {
       setDetail(null);
@@ -809,22 +981,32 @@ function App() {
     }
     let stale = false;
     setDetailError("");
+    detailInvalid.current = false;
     api(`/threads/${selectedId}`)
       .then((d) => {
         if (!stale) setDetail(d);
       })
-      .catch(() => {
+      .catch((e) => {
         if (!stale) {
-          setDetail(null);
-          setDetailError(
-            "This conversation is unavailable. It may have been removed, or you may not have access.",
-          );
+          detailInvalid.current = !e.status || e.status >= 500;
+          if (detailInvalid.current) {
+            // Keep an already loaded conversation and its draft during a transient failure.
+            notify(e.message, true);
+            setDetailError(
+              "Unable to refresh this conversation. Retrying on the next update check.",
+            );
+          } else {
+            setDetail(null);
+            setDetailError(
+              "This conversation is unavailable. It may have been removed, or you may not have access.",
+            );
+          }
         }
       });
     return () => {
       stale = true;
     };
-  }, [selectedId, refreshKey, auth]);
+  }, [selectedId, detailKey, auth]);
   useEffect(() => {
     if (page !== "inbox" || auth !== "signedIn") return;
     let stale = false;
@@ -846,17 +1028,17 @@ function App() {
   useEffect(() => {
     if (auth !== "signedIn") return;
     const es = new EventSource("/api/events");
-    let timer;
-    es.addEventListener("refresh", () => {
-      clearTimeout(timer);
-      timer = setTimeout(refresh, 120);
-    });
-    es.onopen = () => setConnected(true);
+    es.addEventListener("refresh", refresh);
+    es.onopen = () => {
+      setConnected(true);
+      refresh();
+    };
     es.onerror = () => setConnected(false);
     const fallback = setInterval(refresh, 20000);
     return () => {
       es.close();
-      clearTimeout(timer);
+      clearTimeout(syncTimer.current);
+      syncTimer.current = null;
       clearInterval(fallback);
     };
   }, [auth]);
@@ -1141,6 +1323,7 @@ function App() {
                   setInbox([]);
                   setSchedules([]);
                   setData(null);
+                  syncedUser.current = null;
                   setAuth("signedOut");
                 } catch (error) {
                   notify(error.message, true);
@@ -1209,722 +1392,759 @@ function App() {
           </div>
         </header>
         <div className="origin-view" hidden={!!selectedId}>
-          {page === "work" && (
-            <>
-              <section className="page-heading">
-                <div>
-                  <div className="eyebrow">CONVERSATIONS INTO PROGRESS</div>
-                  <h1>
-                    {channel ? (
-                      <>
-                        <span className="heading-hash">#</span>
-                        {channel.name}
-                        {!!channel.archived && (
-                          <span className="pill">Archived</span>
-                        )}
-                      </>
-                    ) : (
-                      "All work"
-                    )}
-                    <span className="heading-count">{threads.length}</span>
-                  </h1>
-                  <p>
-                    {channel?.description ||
-                      "Every conversation has a place. Every idea has a next step."}
-                  </p>
-                </div>
-                <div className="heading-actions">
-                  {channel && (
-                    <>
-                      <button
-                        className={`button subtle ${channel.subscribed ? "subscribed" : ""}`}
-                        onClick={() =>
-                          act(`/channels/${channel.id}/subscription`, "PUT", {
-                            subscribed: !channel.subscribed,
-                          }).catch(() => {})
-                        }
-                      >
-                        {channel.subscribed ? (
-                          <Check size={16} />
-                        ) : (
-                          <Bell size={16} />
-                        )}
-                        <span>
-                          {channel.subscribed ? "Subscribed" : "Subscribe"}
-                        </span>
-                      </button>
-                      <button
-                        className="icon-button"
-                        aria-label="Edit channel"
-                        onClick={() => setModal({ type: "channel", channel })}
-                      >
-                        <MoreHorizontal size={20} />
-                      </button>
-                    </>
-                  )}
-                  <button
-                    className="button primary"
-                    disabled={!!channel?.archived}
-                    onClick={startThread}
-                  >
-                    <Plus size={17} />
-                    New thread
-                  </button>
-                </div>
-              </section>
-              <section className="work-toolbar">
-                <div
-                  className="view-switch"
-                  role="group"
-                  aria-label="Work view"
-                >
-                  <button
-                    className={view === "threads" ? "selected" : ""}
-                    aria-pressed={view === "threads"}
-                    onClick={() => {
-                      setView("threads");
-                      localStorage.setItem("tw_view", "threads");
-                    }}
-                  >
-                    <MessageSquare size={16} />
-                    Threads
-                  </button>
-                  <button
-                    className={view === "board" ? "selected" : ""}
-                    aria-pressed={view === "board"}
-                    onClick={() => {
-                      setView("board");
-                      localStorage.setItem("tw_view", "board");
-                    }}
-                  >
-                    <Columns3 size={16} />
-                    Board
-                  </button>
-                </div>
-                <div className="toolbar-controls">
-                  <label className="search">
-                    <Search size={16} />
-                    <input
-                      id="conversation-search"
-                      aria-label="Filter conversations"
-                      placeholder="Search conversations…"
-                      value={query}
-                      onChange={(e) => setQuery(e.target.value)}
-                    />
-                  </label>
-                  <label className="filter-select">
-                    <SlidersHorizontal size={15} />
-                    <select
-                      aria-label="Filter assignee"
-                      value={assignee}
-                      onChange={(e) => setAssignee(e.target.value)}
-                    >
-                      <option value="">Everyone</option>
-                      {data.users.map((u) => (
-                        <option key={u.id} value={u.id}>
-                          {u.name}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  {view === "threads" && (
-                    <select
-                      aria-label="Filter status"
-                      className="status-filter"
-                      value={statusFilter}
-                      onChange={(e) => setStatusFilter(e.target.value)}
-                    >
-                      <option value="">All statuses</option>
-                      {data.statuses.map((s) => (
-                        <option key={s.id} value={s.id}>
-                          {s.name}
-                        </option>
-                      ))}
-                    </select>
-                  )}
-                </div>
-              </section>
-              {view === "threads" && !channel && (
-                <ReplyComposer
-                  creation
-                  key={channelId || "all"}
-                  data={data}
-                  channelId={channelId}
-                  users={data.users}
-                  act={act}
-                  notify={notify}
-                  afterPost={() => {
-                    setQuery("");
-                    setSearch("");
-                    setAssignee("");
-                    setStatusFilter("");
-                    notify("Message sent");
-                  }}
-                  textareaId="new-thread-message"
-                  drafts={composerDrafts.current}
-                  draftKey="all-work"
-                />
-              )}
-              {channel && view === "threads" ? (
-                <ChannelStream
-                  key={channel.id}
-                  channel={channel}
-                  threads={shown}
-                  loading={loading || loadedChannelId !== channelId}
-                  data={data}
-                  act={act}
-                  notify={notify}
-                  openThread={openThread}
-                  positions={channelPositions.current}
-                  drafts={composerDrafts.current}
-                  afterPost={() => {
-                    setQuery("");
-                    setSearch("");
-                    setAssignee("");
-                    setStatusFilter("");
-                    notify("Message sent");
-                  }}
-                />
-              ) : (
-                <>
-                  <div className="work-meta">
-                    <span>
-                      {view === "threads"
-                        ? "Conversations, in the order they began"
-                        : "One conversation. A clear path forward."}
-                    </span>
-                    <span>
-                      {loading ? (
-                        <>
-                          <LoaderCircle size={12} className="spin" />
-                          Updating
-                        </>
-                      ) : (
-                        <>
-                          <span className="live-dot" />{" "}
-                          {view === "threads" ? "Newest first" : "Live board"}
-                        </>
-                      )}
-                    </span>
-                  </div>
-                  {!shown.length ? (
-                    <Empty
-                      title={
-                        search
-                          ? "No matching conversations"
-                          : "Make room for your next idea."
-                      }
-                      icon={search ? Search : MessageSquare}
-                      action={
-                        !search && (
-                          <button
-                            className="button primary"
-                            disabled={!!channel?.archived}
-                            onClick={startThread}
-                          >
-                            <Plus size={16} />
-                            Start a conversation
-                          </button>
-                        )
-                      }
-                    >
-                      {search
-                        ? "Try another search or adjust your filters."
-                        : "Start a thread, bring in your teammates, and move the work forward together."}
-                    </Empty>
-                  ) : view === "threads" ? (
-                    <section className="thread-list">
-                      <div className="thread-list-head">
-                        <span>CONVERSATION</span>
-                        <span>STATUS</span>
-                        <span>ASSIGNEE</span>
-                        <span>STARTED</span>
+          <RetainedView
+            frozen={!!selectedId || searchOpen || !!modal}
+            render={() => (
+              <>
+                {page === "work" && (
+                  <>
+                    <section className="page-heading">
+                      <div>
+                        <div className="eyebrow">
+                          CONVERSATIONS INTO PROGRESS
+                        </div>
+                        <h1>
+                          {channel ? (
+                            <>
+                              <span className="heading-hash">#</span>
+                              {channel.name}
+                              {!!channel.archived && (
+                                <span className="pill">Archived</span>
+                              )}
+                            </>
+                          ) : (
+                            "All work"
+                          )}
+                          <span className="heading-count">
+                            {threads.length}
+                          </span>
+                        </h1>
+                        <p>
+                          {channel?.description ||
+                            "Every conversation has a place. Every idea has a next step."}
+                        </p>
                       </div>
-                      {shown.map((t) => (
-                        <button
-                          className="thread-row"
-                          key={t.id}
-                          onClick={() => openThread(t.id)}
-                        >
-                          <div className="thread-main">
-                            <span className="thread-symbol">
-                              <MessageSquare size={19} />
-                            </span>
-                            <div>
-                              <div className="thread-title">{t.title}</div>
-                              <div className="thread-excerpt">
-                                <span>#{t.channel_name}</span>
-                                <span className="meta-dot">·</span>
-                                <span>
-                                  {t.body
-                                    ?.replace(/[#*`>]/g, "")
-                                    .slice(0, 90) ||
-                                    `Started by ${t.author_name}`}
-                                </span>
-                                {t.reply_count > 0 && (
-                                  <>
-                                    <span className="meta-dot">·</span>
-                                    <span className="reply-count">
-                                      <MessageSquare size={12} />
-                                      {t.reply_count}
-                                    </span>
-                                  </>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                          <span className="status-pill">
-                            <i style={{ background: t.status_color }} />
-                            {t.status_name}
-                          </span>
-                          <div className="row-assignee">
-                            {t.assignee_id ? (
-                              <>
-                                <Avatar
-                                  user={data.users.find(
-                                    (u) => u.id === t.assignee_id,
-                                  )}
-                                  size="small"
-                                />
-                                <span>{t.assignee_name}</span>
-                              </>
-                            ) : (
-                              <span className="unassigned">Unassigned</span>
-                            )}
-                          </div>
-                          <span className="thread-date">
-                            {date(t.created_at)}
-                            <ChevronRight size={15} />
-                          </span>
-                        </button>
-                      ))}
-                    </section>
-                  ) : (
-                    <section className="board">
-                      {data.statuses.map((s) => (
-                        <div
-                          className="board-column"
-                          key={s.id}
-                          onDragOver={(e) => e.preventDefault()}
-                          onDrop={(e) => {
-                            e.preventDefault();
-                            const id = Number(
-                              e.dataTransfer.getData("text/thread-id"),
-                            );
-                            if (id) changeStatus(id, s.id);
-                          }}
-                        >
-                          <header>
-                            <span>
-                              <i style={{ background: s.color }} />
-                              {s.name}
-                              <small>
-                                {
-                                  shown.filter((t) => t.status_id === s.id)
-                                    .length
-                                }
-                              </small>
-                            </span>
+                      <div className="heading-actions">
+                        {channel && (
+                          <>
                             <button
-                              className="icon-button"
-                              aria-label={`New thread in ${s.name}`}
+                              className={`button subtle ${channel.subscribed ? "subscribed" : ""}`}
                               onClick={() =>
-                                setModal({ type: "thread", status: s.id })
+                                act(
+                                  `/channels/${channel.id}/subscription`,
+                                  "PUT",
+                                  {
+                                    subscribed: !channel.subscribed,
+                                  },
+                                ).catch(() => {})
                               }
                             >
-                              <Plus size={16} />
+                              {channel.subscribed ? (
+                                <Check size={16} />
+                              ) : (
+                                <Bell size={16} />
+                              )}
+                              <span>
+                                {channel.subscribed
+                                  ? "Subscribed"
+                                  : "Subscribe"}
+                              </span>
                             </button>
-                          </header>
-                          <div className="board-cards">
-                            {shown
-                              .filter((t) => t.status_id === s.id)
-                              .map((t) => (
-                                <article
-                                  className="board-card"
-                                  key={t.id}
-                                  draggable
-                                  onDragStart={(e) =>
-                                    e.dataTransfer.setData(
-                                      "text/thread-id",
-                                      t.id,
-                                    )
-                                  }
-                                >
-                                  <button
-                                    className="card-content"
-                                    onClick={() => openThread(t.id)}
-                                  >
-                                    <div className="card-tag">
-                                      <Hash size={12} />
-                                      {t.channel_name}
-                                      <span>TW-{t.id}</span>
-                                    </div>
-                                    <h3>{t.title}</h3>
-                                    {t.body && (
-                                      <p>
-                                        {t.body
-                                          .replace(/[#*`>]/g, "")
-                                          .slice(0, 110)}
-                                      </p>
-                                    )}
-                                  </button>
-                                  <footer>
-                                    <span>
-                                      {t.reply_count > 0 ? (
-                                        <>
-                                          <MessageSquare size={13} />
-                                          {t.reply_count}
-                                        </>
-                                      ) : (
-                                        date(t.created_at)
-                                      )}
-                                    </span>
-                                    <div>
-                                      <select
-                                        aria-label={`Status of ${t.title}`}
-                                        value={t.status_id}
-                                        onChange={(e) =>
-                                          changeStatus(t.id, e.target.value)
-                                        }
-                                      >
-                                        {data.statuses.map((s) => (
-                                          <option key={s.id} value={s.id}>
-                                            {s.name}
-                                          </option>
-                                        ))}
-                                      </select>
-                                      {t.assignee_id && (
-                                        <Avatar
-                                          user={data.users.find(
-                                            (u) => u.id === t.assignee_id,
-                                          )}
-                                          size="small"
-                                        />
-                                      )}
-                                    </div>
-                                  </footer>
-                                </article>
-                              ))}
-                            {!shown.some((t) => t.status_id === s.id) && (
-                              <div className="column-empty">
-                                Drop a thread here
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      ))}
+                            <button
+                              className="icon-button"
+                              aria-label="Edit channel"
+                              onClick={() =>
+                                setModal({ type: "channel", channel })
+                              }
+                            >
+                              <MoreHorizontal size={20} />
+                            </button>
+                          </>
+                        )}
+                        <button
+                          className="button primary"
+                          disabled={!!channel?.archived}
+                          onClick={startThread}
+                        >
+                          <Plus size={17} />
+                          New thread
+                        </button>
+                      </div>
                     </section>
-                  )}
-                  <footer className="page-footer">
-                    <span>
-                      <MessageSquare size={13} /> A thread in conversation. A
-                      ticket on the board.
-                    </span>
-                    <span>
-                      Shared by people & agents{" "}
-                      <span className="footer-spark">✳</span>
-                    </span>
-                  </footer>
-                </>
-              )}
-            </>
-          )}
-          {page === "inbox" && (
-            <>
-              <section className="page-heading">
-                <div>
-                  <div className="eyebrow">STAY IN THE LOOP</div>
-                  <h1>
-                    Your inbox
-                    <span className="heading-count">{data.unread}</span>
-                  </h1>
-                  <p>Replies, mentions, and changes to the work you follow.</p>
-                </div>
-                <div className="heading-actions">
-                  <button
-                    className="button primary"
-                    onClick={() => setReminderOpen(true)}
-                  >
-                    <Bell size={16} />
-                    New reminder
-                  </button>
-                  <button
-                    className="button"
-                    onClick={() =>
-                      act("/inbox/read", "POST", {}).catch(() => {})
-                    }
-                  >
-                    <CheckCheck size={16} />
-                    Mark all read
-                  </button>
-                </div>
-              </section>
-              {reminderOpen && (
-                <ReminderComposer
-                  Dialog={Dialog}
-                  onClose={() => setReminderOpen(false)}
-                  onCreate={(body) =>
-                    act("/notification-schedules", "POST", body)
-                  }
-                  onCreated={(saved) => {
-                    setReminderOpen(false);
-                    notify(
-                      `Reminder scheduled for ${reminderTimeLabel(saved.due_at)}`,
-                    );
-                  }}
-                />
-              )}
-              {schedules.length > 0 && (
-                <section
-                  className="reminder-upcoming"
-                  aria-label="Upcoming reminders"
-                >
-                  <h2>
-                    Upcoming <span>{schedules.length}</span>
-                  </h2>
-                  {schedules.map((schedule) => (
-                    <div
-                      className="reminder-row"
-                      id={`reminder-${schedule.id}`}
-                      key={schedule.id}
-                    >
-                      <div>
-                        <strong>{schedule.message}</strong>
-                        <p>
-                          {reminderTimeLabel(schedule.due_at)}
-                          {schedule.interval_ms
-                            ? ` · every ${reminderInterval(schedule.interval_ms)}`
-                            : ""}
-                        </p>
-                      </div>
-                      <button
-                        className="button"
-                        onClick={() =>
-                          act(
-                            `/notification-schedules/${schedule.id}`,
-                            "DELETE",
-                          ).catch(() => {})
-                        }
-                        aria-label={`Cancel reminder: ${schedule.message}`}
+                    <section className="work-toolbar">
+                      <div
+                        className="view-switch"
+                        role="group"
+                        aria-label="Work view"
                       >
-                        Cancel
-                      </button>
-                    </div>
-                  ))}
-                </section>
-              )}
-              <div className="inbox-list">
-                {inbox.length ? (
-                  inbox.map((n) => (
-                    <button
-                      className={`inbox-item ${!n.read_at ? "unread" : ""}`}
-                      id={`notification-${n.id}`}
-                      key={n.id}
-                      onClick={async () => {
-                        await act("/inbox/read", "POST", { ids: [n.id] }).catch(
-                          () => {},
-                        );
-                        if (n.thread_id)
-                          openThread(
-                            n.thread_id,
-                            "discussion",
-                            null,
-                            n.payload.reply_id,
-                          );
-                      }}
-                    >
-                      <Avatar
-                        user={data.users.find((u) => u.id === n.actor_id)}
-                      />
-                      <div>
-                        <div className="inbox-title">
-                          <strong>{n.actor_name}</strong> {notificationVerb(n)}{" "}
-                          <strong>
-                            {n.payload.title ||
-                              (n.thread_id
-                                ? `TW-${n.thread_id}`
-                                : "the workspace")}
-                          </strong>
-                        </div>
-                        <p>
-                          {n.type === "notification.scheduled"
-                            ? n.payload.body
-                            : notificationSummary(n)}
-                        </p>
-                        <span>
-                          {n.channel_name
-                            ? `#${n.channel_name}`
-                            : n.type === "notification.scheduled"
-                              ? "Private reminder"
-                              : "Workspace activity"}{" "}
-                          <span className="meta-dot">·</span>{" "}
-                          {timeAgo(n.created_at)}
-                        </span>
+                        <button
+                          className={view === "threads" ? "selected" : ""}
+                          aria-pressed={view === "threads"}
+                          onClick={() => {
+                            setView("threads");
+                            localStorage.setItem("tw_view", "threads");
+                          }}
+                        >
+                          <MessageSquare size={16} />
+                          Threads
+                        </button>
+                        <button
+                          className={view === "board" ? "selected" : ""}
+                          aria-pressed={view === "board"}
+                          onClick={() => {
+                            setView("board");
+                            localStorage.setItem("tw_view", "board");
+                          }}
+                        >
+                          <Columns3 size={16} />
+                          Board
+                        </button>
                       </div>
-                      {!n.read_at && <i className="inbox-unread-dot" />}
-                    </button>
-                  ))
-                ) : (
-                  <Empty title="You're all caught up." icon={Inbox}>
-                    Subscribe to a channel or join a conversation to receive
-                    updates here.
-                  </Empty>
-                )}
-              </div>
-            </>
-          )}
-          {page === "team" && (
-            <>
-              <section className="page-heading">
-                <div>
-                  <div className="eyebrow">YOUR TEAM, TOGETHER</div>
-                  <h1>
-                    People & agents
-                    <span className="heading-count">{data.users.length}</span>
-                  </h1>
-                  <p>Different perspectives. One shared workspace.</p>
-                </div>
-                {data.user.admin && (
-                  <div className="heading-actions">
-                    <button
-                      className="button"
-                      onClick={() => setModal({ type: "user" })}
-                    >
-                      <Plus size={16} />
-                      Add person
-                    </button>
-                    <button
-                      className="button primary"
-                      onClick={() => setModal({ type: "agent" })}
-                    >
-                      <Bot size={16} />
-                      Create agent
-                    </button>
-                  </div>
-                )}
-              </section>
-              <div className="team-section">
-                <div className="section-title">
-                  <h2>AI teammates</h2>
-                  <span>Persistent sessions. Independent voices.</span>
-                </div>
-                <div className="team-grid">
-                  {data.agents.map((a) => (
-                    <article
-                      className="agent-card"
-                      id={`person-${a.user_id}`}
-                      key={a.user_id}
-                    >
-                      <div className="agent-card-top">
-                        <Avatar user={{ name: a.name, kind: "agent" }} />
-                        <span className={`state-badge ${agentState(a)}`}>
-                          <i />
-                          {agentState(a).replace("_", " ")}
-                        </span>
-                      </div>
-                      <h3>
-                        {a.name}
-                        <span>@{a.username}</span>
-                      </h3>
-                      <p>{a.role}</p>
-                      <div className="agent-card-footer">
-                        <span>
-                          <Terminal size={13} />
-                          {a.session_id
-                            ? "Persistent session"
-                            : "Awaiting first session"}
-                        </span>
-                        {data.user.admin && (
-                          <button
-                            className="text-button"
-                            onClick={() =>
-                              setModal({ type: "agent-detail", id: a.user_id })
-                            }
+                      <div className="toolbar-controls">
+                        <label className="search">
+                          <Search size={16} />
+                          <input
+                            id="conversation-search"
+                            aria-label="Filter conversations"
+                            placeholder="Search conversations…"
+                            value={query}
+                            onChange={(e) => setQuery(e.target.value)}
+                          />
+                        </label>
+                        <label className="filter-select">
+                          <SlidersHorizontal size={15} />
+                          <select
+                            aria-label="Filter assignee"
+                            value={assignee}
+                            onChange={(e) => setAssignee(e.target.value)}
                           >
-                            Manage <ArrowUpRight size={14} />
-                          </button>
+                            <option value="">Everyone</option>
+                            {data.users.map((u) => (
+                              <option key={u.id} value={u.id}>
+                                {u.name}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        {view === "threads" && (
+                          <select
+                            aria-label="Filter status"
+                            className="status-filter"
+                            value={statusFilter}
+                            onChange={(e) => setStatusFilter(e.target.value)}
+                          >
+                            <option value="">All statuses</option>
+                            {data.statuses.map((s) => (
+                              <option key={s.id} value={s.id}>
+                                {s.name}
+                              </option>
+                            ))}
+                          </select>
                         )}
                       </div>
-                    </article>
-                  ))}
-                  <button
-                    className="agent-card add-agent"
-                    onClick={() =>
-                      data.user.admin
-                        ? setModal({ type: "agent" })
-                        : notify("Ask your admin to create an agent.")
-                    }
-                  >
-                    <span>
-                      <Plus size={24} />
-                    </span>
-                    <h3>A new perspective</h3>
-                    <p>
-                      Give an agent a name, a role,
-                      <br />
-                      and a place on your team.
-                    </p>
-                  </button>
-                </div>
-                <div className="section-title people-title">
-                  <h2>People</h2>
-                  <span>
-                    {data.users.filter((u) => u.kind === "human").length}{" "}
-                    members
-                  </span>
-                </div>
-                <div className="people-list">
-                  {data.users
-                    .filter((u) => u.kind === "human")
-                    .map((u) => (
-                      <div
-                        className="person-row"
-                        id={`person-${u.id}`}
-                        key={u.id}
-                      >
-                        <Avatar user={u} />
-                        <div>
-                          <strong>
-                            {u.name}
-                            {u.id === data.user.id && <small>you</small>}
-                          </strong>
-                          <span>@{u.username}</span>
+                    </section>
+                    {view === "threads" && !channel && (
+                      <ReplyComposer
+                        creation
+                        key={channelId || "all"}
+                        data={data}
+                        channelId={channelId}
+                        users={data.users}
+                        act={act}
+                        notify={notify}
+                        afterPost={() => {
+                          setQuery("");
+                          setSearch("");
+                          setAssignee("");
+                          setStatusFilter("");
+                          notify("Message sent");
+                        }}
+                        textareaId="new-thread-message"
+                        drafts={composerDrafts.current}
+                        draftKey="all-work"
+                      />
+                    )}
+                    {channel && view === "threads" ? (
+                      <ChannelStream
+                        key={channel.id}
+                        channel={channel}
+                        threads={shown}
+                        loading={loading || loadedChannelId !== channelId}
+                        data={data}
+                        act={act}
+                        notify={notify}
+                        openThread={openThread}
+                        positions={channelPositions.current}
+                        drafts={composerDrafts.current}
+                        afterPost={() => {
+                          setQuery("");
+                          setSearch("");
+                          setAssignee("");
+                          setStatusFilter("");
+                          notify("Message sent");
+                        }}
+                      />
+                    ) : (
+                      <>
+                        <div className="work-meta">
+                          <span>
+                            {view === "threads"
+                              ? "Conversations, in the order they began"
+                              : "One conversation. A clear path forward."}
+                          </span>
+                          <span>
+                            {loading ? (
+                              <>
+                                <LoaderCircle size={12} className="spin" />
+                                Updating
+                              </>
+                            ) : (
+                              <>
+                                <span className="live-dot" />{" "}
+                                {view === "threads"
+                                  ? "Newest first"
+                                  : "Live board"}
+                              </>
+                            )}
+                          </span>
                         </div>
-                        <span className="pill">
-                          {u.admin ? "Admin" : "Member"}
+                        {!shown.length ? (
+                          <Empty
+                            title={
+                              search
+                                ? "No matching conversations"
+                                : "Make room for your next idea."
+                            }
+                            icon={search ? Search : MessageSquare}
+                            action={
+                              !search && (
+                                <button
+                                  className="button primary"
+                                  disabled={!!channel?.archived}
+                                  onClick={startThread}
+                                >
+                                  <Plus size={16} />
+                                  Start a conversation
+                                </button>
+                              )
+                            }
+                          >
+                            {search
+                              ? "Try another search or adjust your filters."
+                              : "Start a thread, bring in your teammates, and move the work forward together."}
+                          </Empty>
+                        ) : view === "threads" ? (
+                          <section className="thread-list">
+                            <div className="thread-list-head">
+                              <span>CONVERSATION</span>
+                              <span>STATUS</span>
+                              <span>ASSIGNEE</span>
+                              <span>STARTED</span>
+                            </div>
+                            {shown.map((t) => (
+                              <button
+                                className="thread-row"
+                                key={t.id}
+                                onClick={() => openThread(t.id)}
+                              >
+                                <div className="thread-main">
+                                  <span className="thread-symbol">
+                                    <MessageSquare size={19} />
+                                  </span>
+                                  <div>
+                                    <div className="thread-title">
+                                      {t.title}
+                                    </div>
+                                    <div className="thread-excerpt">
+                                      <span>#{t.channel_name}</span>
+                                      <span className="meta-dot">·</span>
+                                      <span>
+                                        {t.body
+                                          ?.replace(/[#*`>]/g, "")
+                                          .slice(0, 90) ||
+                                          `Started by ${t.author_name}`}
+                                      </span>
+                                      {t.reply_count > 0 && (
+                                        <>
+                                          <span className="meta-dot">·</span>
+                                          <span className="reply-count">
+                                            <MessageSquare size={12} />
+                                            {t.reply_count}
+                                          </span>
+                                        </>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                                <span className="status-pill">
+                                  <i style={{ background: t.status_color }} />
+                                  {t.status_name}
+                                </span>
+                                <div className="row-assignee">
+                                  {t.assignee_id ? (
+                                    <>
+                                      <Avatar
+                                        user={data.users.find(
+                                          (u) => u.id === t.assignee_id,
+                                        )}
+                                        size="small"
+                                      />
+                                      <span>{t.assignee_name}</span>
+                                    </>
+                                  ) : (
+                                    <span className="unassigned">
+                                      Unassigned
+                                    </span>
+                                  )}
+                                </div>
+                                <span className="thread-date">
+                                  {date(t.created_at)}
+                                  <ChevronRight size={15} />
+                                </span>
+                              </button>
+                            ))}
+                          </section>
+                        ) : (
+                          <section className="board">
+                            {data.statuses.map((s) => (
+                              <div
+                                className="board-column"
+                                key={s.id}
+                                onDragOver={(e) => e.preventDefault()}
+                                onDrop={(e) => {
+                                  e.preventDefault();
+                                  const id = Number(
+                                    e.dataTransfer.getData("text/thread-id"),
+                                  );
+                                  if (id) changeStatus(id, s.id);
+                                }}
+                              >
+                                <header>
+                                  <span>
+                                    <i style={{ background: s.color }} />
+                                    {s.name}
+                                    <small>
+                                      {
+                                        shown.filter(
+                                          (t) => t.status_id === s.id,
+                                        ).length
+                                      }
+                                    </small>
+                                  </span>
+                                  <button
+                                    className="icon-button"
+                                    aria-label={`New thread in ${s.name}`}
+                                    onClick={() =>
+                                      setModal({ type: "thread", status: s.id })
+                                    }
+                                  >
+                                    <Plus size={16} />
+                                  </button>
+                                </header>
+                                <div className="board-cards">
+                                  {shown
+                                    .filter((t) => t.status_id === s.id)
+                                    .map((t) => (
+                                      <article
+                                        className="board-card"
+                                        key={t.id}
+                                        draggable
+                                        onDragStart={(e) =>
+                                          e.dataTransfer.setData(
+                                            "text/thread-id",
+                                            t.id,
+                                          )
+                                        }
+                                      >
+                                        <button
+                                          className="card-content"
+                                          onClick={() => openThread(t.id)}
+                                        >
+                                          <div className="card-tag">
+                                            <Hash size={12} />
+                                            {t.channel_name}
+                                            <span>TW-{t.id}</span>
+                                          </div>
+                                          <h3>{t.title}</h3>
+                                          {t.body && (
+                                            <p>
+                                              {t.body
+                                                .replace(/[#*`>]/g, "")
+                                                .slice(0, 110)}
+                                            </p>
+                                          )}
+                                        </button>
+                                        <footer>
+                                          <span>
+                                            {t.reply_count > 0 ? (
+                                              <>
+                                                <MessageSquare size={13} />
+                                                {t.reply_count}
+                                              </>
+                                            ) : (
+                                              date(t.created_at)
+                                            )}
+                                          </span>
+                                          <div>
+                                            <select
+                                              aria-label={`Status of ${t.title}`}
+                                              value={t.status_id}
+                                              onChange={(e) =>
+                                                changeStatus(
+                                                  t.id,
+                                                  e.target.value,
+                                                )
+                                              }
+                                            >
+                                              {data.statuses.map((s) => (
+                                                <option key={s.id} value={s.id}>
+                                                  {s.name}
+                                                </option>
+                                              ))}
+                                            </select>
+                                            {t.assignee_id && (
+                                              <Avatar
+                                                user={data.users.find(
+                                                  (u) => u.id === t.assignee_id,
+                                                )}
+                                                size="small"
+                                              />
+                                            )}
+                                          </div>
+                                        </footer>
+                                      </article>
+                                    ))}
+                                  {!shown.some((t) => t.status_id === s.id) && (
+                                    <div className="column-empty">
+                                      Drop a thread here
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            ))}
+                          </section>
+                        )}
+                        <footer className="page-footer">
+                          <span>
+                            <MessageSquare size={13} /> A thread in
+                            conversation. A ticket on the board.
+                          </span>
+                          <span>
+                            Shared by people & agents{" "}
+                            <span className="footer-spark">✳</span>
+                          </span>
+                        </footer>
+                      </>
+                    )}
+                  </>
+                )}
+                {page === "inbox" && (
+                  <>
+                    <section className="page-heading">
+                      <div>
+                        <div className="eyebrow">STAY IN THE LOOP</div>
+                        <h1>
+                          Your inbox
+                          <span className="heading-count">{data.unread}</span>
+                        </h1>
+                        <p>
+                          Replies, mentions, and changes to the work you follow.
+                        </p>
+                      </div>
+                      <div className="heading-actions">
+                        <button
+                          className="button primary"
+                          onClick={() => setReminderOpen(true)}
+                        >
+                          <Bell size={16} />
+                          New reminder
+                        </button>
+                        <button
+                          className="button"
+                          onClick={() =>
+                            act("/inbox/read", "POST", {}).catch(() => {})
+                          }
+                        >
+                          <CheckCheck size={16} />
+                          Mark all read
+                        </button>
+                      </div>
+                    </section>
+                    {reminderOpen && (
+                      <ReminderComposer
+                        Dialog={Dialog}
+                        onClose={() => setReminderOpen(false)}
+                        onCreate={(body) =>
+                          act("/notification-schedules", "POST", body)
+                        }
+                        onCreated={(saved) => {
+                          setReminderOpen(false);
+                          notify(
+                            `Reminder scheduled for ${reminderTimeLabel(saved.due_at)}`,
+                          );
+                        }}
+                      />
+                    )}
+                    {schedules.length > 0 && (
+                      <section
+                        className="reminder-upcoming"
+                        aria-label="Upcoming reminders"
+                      >
+                        <h2>
+                          Upcoming <span>{schedules.length}</span>
+                        </h2>
+                        {schedules.map((schedule) => (
+                          <div
+                            className="reminder-row"
+                            id={`reminder-${schedule.id}`}
+                            key={schedule.id}
+                          >
+                            <div>
+                              <strong>{schedule.message}</strong>
+                              <p>
+                                {reminderTimeLabel(schedule.due_at)}
+                                {schedule.interval_ms
+                                  ? ` · every ${reminderInterval(schedule.interval_ms)}`
+                                  : ""}
+                              </p>
+                            </div>
+                            <button
+                              className="button"
+                              onClick={() =>
+                                act(
+                                  `/notification-schedules/${schedule.id}`,
+                                  "DELETE",
+                                ).catch(() => {})
+                              }
+                              aria-label={`Cancel reminder: ${schedule.message}`}
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        ))}
+                      </section>
+                    )}
+                    <div className="inbox-list">
+                      {inbox.length ? (
+                        inbox.map((n) => (
+                          <button
+                            className={`inbox-item ${!n.read_at ? "unread" : ""}`}
+                            id={`notification-${n.id}`}
+                            key={n.id}
+                            onClick={async () => {
+                              await act("/inbox/read", "POST", {
+                                ids: [n.id],
+                              }).catch(() => {});
+                              if (n.thread_id)
+                                openThread(
+                                  n.thread_id,
+                                  "discussion",
+                                  null,
+                                  n.payload.reply_id,
+                                );
+                            }}
+                          >
+                            <Avatar
+                              user={data.users.find((u) => u.id === n.actor_id)}
+                            />
+                            <div>
+                              <div className="inbox-title">
+                                <strong>{n.actor_name}</strong>{" "}
+                                {notificationVerb(n)}{" "}
+                                <strong>
+                                  {n.payload.title ||
+                                    (n.thread_id
+                                      ? `TW-${n.thread_id}`
+                                      : "the workspace")}
+                                </strong>
+                              </div>
+                              <p>
+                                {n.type === "notification.scheduled"
+                                  ? n.payload.body
+                                  : notificationSummary(n)}
+                              </p>
+                              <span>
+                                {n.channel_name
+                                  ? `#${n.channel_name}`
+                                  : n.type === "notification.scheduled"
+                                    ? "Private reminder"
+                                    : "Workspace activity"}{" "}
+                                <span className="meta-dot">·</span>{" "}
+                                {timeAgo(n.created_at)}
+                              </span>
+                            </div>
+                            {!n.read_at && <i className="inbox-unread-dot" />}
+                          </button>
+                        ))
+                      ) : (
+                        <Empty title="You're all caught up." icon={Inbox}>
+                          Subscribe to a channel or join a conversation to
+                          receive updates here.
+                        </Empty>
+                      )}
+                    </div>
+                  </>
+                )}
+                {page === "team" && (
+                  <>
+                    <section className="page-heading">
+                      <div>
+                        <div className="eyebrow">YOUR TEAM, TOGETHER</div>
+                        <h1>
+                          People & agents
+                          <span className="heading-count">
+                            {data.users.length}
+                          </span>
+                        </h1>
+                        <p>Different perspectives. One shared workspace.</p>
+                      </div>
+                      {data.user.admin && (
+                        <div className="heading-actions">
+                          <button
+                            className="button"
+                            onClick={() => setModal({ type: "user" })}
+                          >
+                            <Plus size={16} />
+                            Add person
+                          </button>
+                          <button
+                            className="button primary"
+                            onClick={() => setModal({ type: "agent" })}
+                          >
+                            <Bot size={16} />
+                            Create agent
+                          </button>
+                        </div>
+                      )}
+                    </section>
+                    <div className="team-section">
+                      <div className="section-title">
+                        <h2>AI teammates</h2>
+                        <span>Persistent sessions. Independent voices.</span>
+                      </div>
+                      <div className="team-grid">
+                        {data.agents.map((a) => (
+                          <article
+                            className="agent-card"
+                            id={`person-${a.user_id}`}
+                            key={a.user_id}
+                          >
+                            <div className="agent-card-top">
+                              <Avatar user={{ name: a.name, kind: "agent" }} />
+                              <span className={`state-badge ${agentState(a)}`}>
+                                <i />
+                                {agentState(a).replace("_", " ")}
+                              </span>
+                            </div>
+                            <h3>
+                              {a.name}
+                              <span>@{a.username}</span>
+                            </h3>
+                            <p>{a.role}</p>
+                            <div className="agent-card-footer">
+                              <span>
+                                <Terminal size={13} />
+                                {a.session_id
+                                  ? "Persistent session"
+                                  : "Awaiting first session"}
+                              </span>
+                              {data.user.admin && (
+                                <button
+                                  className="text-button"
+                                  onClick={() =>
+                                    setModal({
+                                      type: "agent-detail",
+                                      id: a.user_id,
+                                    })
+                                  }
+                                >
+                                  Manage <ArrowUpRight size={14} />
+                                </button>
+                              )}
+                            </div>
+                          </article>
+                        ))}
+                        <button
+                          className="agent-card add-agent"
+                          onClick={() =>
+                            data.user.admin
+                              ? setModal({ type: "agent" })
+                              : notify("Ask your admin to create an agent.")
+                          }
+                        >
+                          <span>
+                            <Plus size={24} />
+                          </span>
+                          <h3>A new perspective</h3>
+                          <p>
+                            Give an agent a name, a role,
+                            <br />
+                            and a place on your team.
+                          </p>
+                        </button>
+                      </div>
+                      <div className="section-title people-title">
+                        <h2>People</h2>
+                        <span>
+                          {data.users.filter((u) => u.kind === "human").length}{" "}
+                          members
                         </span>
                       </div>
-                    ))}
-                </div>
-              </div>
-            </>
-          )}
-          {page === "queue" && (
-            <WorkQueuePage
-              key={data.user.id}
-              api={api}
-              data={data}
-              refreshKey={refreshKey}
-              openThread={openThread}
-            />
-          )}
-          {page === "repositories" && (
-            <RepositoriesPage
-              key={data.user.id}
-              api={api}
-              data={data}
-              refreshKey={refreshKey}
-              notify={notify}
-            />
-          )}
-          {page === "settings" && data.user.admin && (
-            <SettingsPage
-              data={data}
-              act={act}
-              setModal={setModal}
-              notify={notify}
-            />
-          )}
+                      <div className="people-list">
+                        {data.users
+                          .filter((u) => u.kind === "human")
+                          .map((u) => (
+                            <div
+                              className="person-row"
+                              id={`person-${u.id}`}
+                              key={u.id}
+                            >
+                              <Avatar user={u} />
+                              <div>
+                                <strong>
+                                  {u.name}
+                                  {u.id === data.user.id && <small>you</small>}
+                                </strong>
+                                <span>@{u.username}</span>
+                              </div>
+                              <span className="pill">
+                                {u.admin ? "Admin" : "Member"}
+                              </span>
+                            </div>
+                          ))}
+                      </div>
+                    </div>
+                  </>
+                )}
+                {page === "queue" && (
+                  <WorkQueuePage
+                    key={data.user.id}
+                    api={api}
+                    data={data}
+                    refreshKey={refreshKey}
+                    openThread={openThread}
+                  />
+                )}
+                {page === "repositories" && (
+                  <RepositoriesPage
+                    key={data.user.id}
+                    api={api}
+                    data={data}
+                    refreshKey={refreshKey}
+                    notify={notify}
+                  />
+                )}
+                {page === "settings" && data.user.admin && (
+                  <SettingsPage
+                    data={data}
+                    act={act}
+                    setModal={setModal}
+                    notify={notify}
+                  />
+                )}
+              </>
+            )}
+          />
         </div>
         {selectedId && (
           <section
@@ -1939,7 +2159,7 @@ function App() {
                 initialBranchId={detailContext.branchId}
                 initialReplyId={detailContext.replyId}
                 readingPositions={readingPositions.current}
-                refreshKey={refreshKey}
+                refreshKey={detailKey}
                 refresh={refresh}
                 data={data}
                 act={act}

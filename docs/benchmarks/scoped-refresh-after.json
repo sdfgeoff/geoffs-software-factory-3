@@ -1,0 +1,493 @@
+{
+  "checkout": "/state/workspace/repositories/1/branches/8",
+  "node": "v24.22.0",
+  "fixture": {
+    "threads": 10000,
+    "replies": 3000000
+  },
+  "notes": [
+    "Single sequential local browser run per checkout on shared hardware; no tail-latency or throughput claim.",
+    "Request bodies are decoded HTTP response bytes; SSE stream excluded. APIRequestContext fixture writes are excluded from page request counts.",
+    "DOM-targeted actions avoid whole-page accessibility traversal overhead. Initial list/Markdown rendering remains unbounded (#16)."
+  ],
+  "actions": [
+    {
+      "name": "all-work-ready",
+      "visible_ms": 4584.604237000001,
+      "request_count": 23,
+      "response_bytes": 5329326,
+      "full_list_pages": 21,
+      "requests": [
+        {
+          "path": "/api/bootstrap",
+          "method": "GET",
+          "status": 200,
+          "bytes": 7419
+        },
+        {
+          "path": "/api/threads?limit=500&offset=0",
+          "method": "GET",
+          "status": 200,
+          "bytes": 266203
+        },
+        {
+          "path": "/api/threads?limit=500&offset=500",
+          "method": "GET",
+          "status": 200,
+          "bytes": 266201
+        },
+        {
+          "path": "/api/sync?since=e2d6b084-f4f3-4bd9-9968-ea4e964ff7a3%3A0",
+          "method": "GET",
+          "status": 200,
+          "bytes": 97
+        },
+        {
+          "path": "/api/threads?limit=500&offset=1000",
+          "method": "GET",
+          "status": 200,
+          "bytes": 266201
+        },
+        {
+          "path": "/api/threads?limit=500&offset=1500",
+          "method": "GET",
+          "status": 200,
+          "bytes": 266201
+        },
+        {
+          "path": "/api/threads?limit=500&offset=2000",
+          "method": "GET",
+          "status": 200,
+          "bytes": 266201
+        },
+        {
+          "path": "/api/threads?limit=500&offset=2500",
+          "method": "GET",
+          "status": 200,
+          "bytes": 266201
+        },
+        {
+          "path": "/api/threads?limit=500&offset=3000",
+          "method": "GET",
+          "status": 200,
+          "bytes": 266201
+        },
+        {
+          "path": "/api/threads?limit=500&offset=3500",
+          "method": "GET",
+          "status": 200,
+          "bytes": 266201
+        },
+        {
+          "path": "/api/threads?limit=500&offset=4000",
+          "method": "GET",
+          "status": 200,
+          "bytes": 266201
+        },
+        {
+          "path": "/api/threads?limit=500&offset=4500",
+          "method": "GET",
+          "status": 200,
+          "bytes": 266201
+        },
+        {
+          "path": "/api/threads?limit=500&offset=5000",
+          "method": "GET",
+          "status": 200,
+          "bytes": 266201
+        },
+        {
+          "path": "/api/threads?limit=500&offset=5500",
+          "method": "GET",
+          "status": 200,
+          "bytes": 266201
+        },
+        {
+          "path": "/api/threads?limit=500&offset=6000",
+          "method": "GET",
+          "status": 200,
+          "bytes": 266201
+        },
+        {
+          "path": "/api/threads?limit=500&offset=6500",
+          "method": "GET",
+          "status": 200,
+          "bytes": 266201
+        },
+        {
+          "path": "/api/threads?limit=500&offset=7000",
+          "method": "GET",
+          "status": 200,
+          "bytes": 266201
+        },
+        {
+          "path": "/api/threads?limit=500&offset=7500",
+          "method": "GET",
+          "status": 200,
+          "bytes": 266201
+        },
+        {
+          "path": "/api/threads?limit=500&offset=8000",
+          "method": "GET",
+          "status": 200,
+          "bytes": 266201
+        },
+        {
+          "path": "/api/threads?limit=500&offset=8500",
+          "method": "GET",
+          "status": 200,
+          "bytes": 266201
+        },
+        {
+          "path": "/api/threads?limit=500&offset=9000",
+          "method": "GET",
+          "status": 200,
+          "bytes": 265203
+        },
+        {
+          "path": "/api/threads?limit=500&offset=9500",
+          "method": "GET",
+          "status": 200,
+          "bytes": 264985
+        },
+        {
+          "path": "/api/threads?limit=500&offset=10000",
+          "method": "GET",
+          "status": 200,
+          "bytes": 2
+        }
+      ]
+    },
+    {
+      "name": "idle-32-seconds",
+      "visible_ms": 32000.797268,
+      "request_count": 1,
+      "response_bytes": 97,
+      "full_list_pages": 0,
+      "requests": [
+        {
+          "path": "/api/sync?since=e2d6b084-f4f3-4bd9-9968-ea4e964ff7a3%3A0",
+          "method": "GET",
+          "status": 200,
+          "bytes": 97
+        }
+      ]
+    },
+    {
+      "name": "channel-ready",
+      "visible_ms": 8961.309838000001,
+      "request_count": 22,
+      "response_bytes": 5321907,
+      "full_list_pages": 21,
+      "requests": [
+        {
+          "path": "/api/threads?channel=1&limit=500&offset=0",
+          "method": "GET",
+          "status": 200,
+          "bytes": 266203
+        },
+        {
+          "path": "/api/sync?since=e2d6b084-f4f3-4bd9-9968-ea4e964ff7a3%3A0",
+          "method": "GET",
+          "status": 200,
+          "bytes": 97
+        },
+        {
+          "path": "/api/threads?channel=1&limit=500&offset=500",
+          "method": "GET",
+          "status": 200,
+          "bytes": 266201
+        },
+        {
+          "path": "/api/threads?channel=1&limit=500&offset=1000",
+          "method": "GET",
+          "status": 200,
+          "bytes": 266201
+        },
+        {
+          "path": "/api/threads?channel=1&limit=500&offset=1500",
+          "method": "GET",
+          "status": 200,
+          "bytes": 266201
+        },
+        {
+          "path": "/api/threads?channel=1&limit=500&offset=2000",
+          "method": "GET",
+          "status": 200,
+          "bytes": 266201
+        },
+        {
+          "path": "/api/threads?channel=1&limit=500&offset=2500",
+          "method": "GET",
+          "status": 200,
+          "bytes": 266201
+        },
+        {
+          "path": "/api/threads?channel=1&limit=500&offset=3000",
+          "method": "GET",
+          "status": 200,
+          "bytes": 266201
+        },
+        {
+          "path": "/api/threads?channel=1&limit=500&offset=3500",
+          "method": "GET",
+          "status": 200,
+          "bytes": 266201
+        },
+        {
+          "path": "/api/threads?channel=1&limit=500&offset=4000",
+          "method": "GET",
+          "status": 200,
+          "bytes": 266201
+        },
+        {
+          "path": "/api/threads?channel=1&limit=500&offset=4500",
+          "method": "GET",
+          "status": 200,
+          "bytes": 266201
+        },
+        {
+          "path": "/api/threads?channel=1&limit=500&offset=5000",
+          "method": "GET",
+          "status": 200,
+          "bytes": 266201
+        },
+        {
+          "path": "/api/threads?channel=1&limit=500&offset=5500",
+          "method": "GET",
+          "status": 200,
+          "bytes": 266201
+        },
+        {
+          "path": "/api/threads?channel=1&limit=500&offset=6000",
+          "method": "GET",
+          "status": 200,
+          "bytes": 266201
+        },
+        {
+          "path": "/api/threads?channel=1&limit=500&offset=6500",
+          "method": "GET",
+          "status": 200,
+          "bytes": 266201
+        },
+        {
+          "path": "/api/threads?channel=1&limit=500&offset=7000",
+          "method": "GET",
+          "status": 200,
+          "bytes": 266201
+        },
+        {
+          "path": "/api/threads?channel=1&limit=500&offset=7500",
+          "method": "GET",
+          "status": 200,
+          "bytes": 266201
+        },
+        {
+          "path": "/api/threads?channel=1&limit=500&offset=8000",
+          "method": "GET",
+          "status": 200,
+          "bytes": 266201
+        },
+        {
+          "path": "/api/threads?channel=1&limit=500&offset=8500",
+          "method": "GET",
+          "status": 200,
+          "bytes": 266201
+        },
+        {
+          "path": "/api/threads?channel=1&limit=500&offset=9000",
+          "method": "GET",
+          "status": 200,
+          "bytes": 265203
+        },
+        {
+          "path": "/api/threads?channel=1&limit=500&offset=9500",
+          "method": "GET",
+          "status": 200,
+          "bytes": 264985
+        },
+        {
+          "path": "/api/threads?channel=1&limit=500&offset=10000",
+          "method": "GET",
+          "status": 200,
+          "bytes": 2
+        }
+      ]
+    },
+    {
+      "name": "channel-send",
+      "visible_ms": 3747.0861360000054,
+      "request_count": 4,
+      "response_bytes": 8204,
+      "full_list_pages": 0,
+      "requests": [
+        {
+          "path": "/api/threads",
+          "method": "POST",
+          "status": 200,
+          "bytes": 240
+        },
+        {
+          "path": "/api/sync?since=e2d6b084-f4f3-4bd9-9968-ea4e964ff7a3%3A0",
+          "method": "GET",
+          "status": 200,
+          "bytes": 101
+        },
+        {
+          "path": "/api/bootstrap",
+          "method": "GET",
+          "status": 200,
+          "bytes": 7419
+        },
+        {
+          "path": "/api/threads?ids=10001&channel=1",
+          "method": "GET",
+          "status": 200,
+          "bytes": 444
+        }
+      ]
+    },
+    {
+      "name": "open-conversation",
+      "visible_ms": 688.8901639999967,
+      "request_count": 2,
+      "response_bytes": 317397,
+      "full_list_pages": 0,
+      "requests": [
+        {
+          "path": "/api/threads/1",
+          "method": "GET",
+          "status": 200,
+          "bytes": 317353
+        },
+        {
+          "path": "/api/work-queue",
+          "method": "GET",
+          "status": 200,
+          "bytes": 44
+        }
+      ]
+    },
+    {
+      "name": "reply-send",
+      "visible_ms": 333.471200999993,
+      "request_count": 5,
+      "response_bytes": 325046,
+      "full_list_pages": 0,
+      "requests": [
+        {
+          "path": "/api/threads/1/replies",
+          "method": "POST",
+          "status": 200,
+          "bytes": 137
+        },
+        {
+          "path": "/api/sync?since=e2d6b084-f4f3-4bd9-9968-ea4e964ff7a3%3A1",
+          "method": "GET",
+          "status": 200,
+          "bytes": 97
+        },
+        {
+          "path": "/api/work-queue",
+          "method": "GET",
+          "status": 200,
+          "bytes": 44
+        },
+        {
+          "path": "/api/bootstrap",
+          "method": "GET",
+          "status": 200,
+          "bytes": 7419
+        },
+        {
+          "path": "/api/threads/1",
+          "method": "GET",
+          "status": 200,
+          "bytes": 317349
+        }
+      ]
+    },
+    {
+      "name": "incoming-selected-reply",
+      "visible_ms": 230.2170530000003,
+      "request_count": 4,
+      "response_bytes": 324911,
+      "full_list_pages": 0,
+      "requests": [
+        {
+          "path": "/api/sync?since=e2d6b084-f4f3-4bd9-9968-ea4e964ff7a3%3A2",
+          "method": "GET",
+          "status": 200,
+          "bytes": 97
+        },
+        {
+          "path": "/api/work-queue",
+          "method": "GET",
+          "status": 200,
+          "bytes": 44
+        },
+        {
+          "path": "/api/bootstrap",
+          "method": "GET",
+          "status": 200,
+          "bytes": 7419
+        },
+        {
+          "path": "/api/threads/1",
+          "method": "GET",
+          "status": 200,
+          "bytes": 317351
+        }
+      ]
+    },
+    {
+      "name": "return-to-channel",
+      "visible_ms": 3765.948709999997,
+      "request_count": 2,
+      "response_bytes": 618,
+      "full_list_pages": 0,
+      "requests": [
+        {
+          "path": "/api/threads?ids=1&channel=1",
+          "method": "GET",
+          "status": 200,
+          "bytes": 521
+        },
+        {
+          "path": "/api/sync?since=e2d6b084-f4f3-4bd9-9968-ea4e964ff7a3%3A3",
+          "method": "GET",
+          "status": 200,
+          "bytes": 97
+        }
+      ]
+    },
+    {
+      "name": "incoming-channel-thread",
+      "visible_ms": 2809.863743000009,
+      "request_count": 3,
+      "response_bytes": 7955,
+      "full_list_pages": 0,
+      "requests": [
+        {
+          "path": "/api/sync?since=e2d6b084-f4f3-4bd9-9968-ea4e964ff7a3%3A3",
+          "method": "GET",
+          "status": 200,
+          "bytes": 101
+        },
+        {
+          "path": "/api/bootstrap",
+          "method": "GET",
+          "status": 200,
+          "bytes": 7419
+        },
+        {
+          "path": "/api/threads?ids=10002&channel=1",
+          "method": "GET",
+          "status": 200,
+          "bytes": 435
+        }
+      ]
+    }
+  ],
+  "errors": []
+}

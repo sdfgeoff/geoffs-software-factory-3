@@ -1,3 +1,4 @@
+import "./refresh-browser.mjs";
 import "./agent-activity-browser.mjs";
 import "./conversation-browser.mjs";
 import "./channel-browser.mjs";
