@@ -582,3 +582,28 @@ Verification: `npm run check`, 56 unit/integration tests and browser regressions
 retention through conversations and Board, mentions, failed-send retry, and Send
 reachability at a reduced 500px viewport. The reduced viewport simulates available
 space; real mobile keyboard/IME behavior still needs device verification.
+
+### Conversation workspace and shared links
+
+Opening a conversation uses the main workspace beside the sidebar. The return
+button restores its originating view, filters, scroll position and focus. Browser
+Back/Forward follows conversation navigation; global search returns to its query.
+Replies keep drafts during in-app navigation. Activity, Branches, subscription,
+editing and attachments remain available in the conversation.
+
+Conversation URLs use `?thread=<id>`; message links add `&reply=<id>`. Direct load,
+refresh and sign-in preserve the destination. A targeted message overrides the
+saved reading position. Missing conversations show an unavailable state; missing
+messages show their conversation with an explanatory notice.
+
+Set server `PUBLIC_ORIGIN=https://your-threadwork.example` (also forwarded by
+Compose) to make **Copy conversation link** and reply link actions use your public
+deployment origin. Without it, links use the browser's current origin. Credentials
+and non-HTTP(S) schemes are rejected in this configuration. Clipboard-denied or
+insecure browser contexts offer a selectable link instead. No worker hostname is
+hardcoded into shared links.
+
+Browser verification covers 1440px/390px layouts, keyboard entry/focus return,
+nonmodal focus, direct/refresh links, Back/Forward, copied public-origin links,
+reply targets, unavailable targets, retained drafts and nested editing dialogs.
+Real mobile keyboard/IME behavior remains a device verification limit.

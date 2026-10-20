@@ -261,6 +261,10 @@ for (const width of [1440, 390])
         await expect(targeted).toHaveClass(/search-target/);
         assert.ok((await distance()) > 32);
         await close();
+        await expect(
+          page.getByLabel("Search everything", { exact: true }),
+        ).toHaveValue("Reading sample 4");
+        await page.keyboard.press("Escape");
         await page
           .getByRole("button", { name: "Open inbox", exact: true })
           .click();

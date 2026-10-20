@@ -73,6 +73,19 @@ export function createApp({
   dataDir = resolve("data"),
   env = process.env,
 } = {}) {
+  let publicOrigin = null;
+  if (env.PUBLIC_ORIGIN) {
+    const configured = new URL(env.PUBLIC_ORIGIN);
+    if (
+      !["https:", "http:"].includes(configured.protocol) ||
+      configured.username ||
+      configured.password
+    )
+      throw new Error(
+        "PUBLIC_ORIGIN must be an HTTP(S) origin without credentials",
+      );
+    publicOrigin = configured.origin;
+  }
   mkdirSync(join(dataDir, "uploads"), { recursive: true });
   const db = openDatabase(join(dataDir, "threadwork.sqlite"));
   bootstrap(db, env);
@@ -381,6 +394,7 @@ export function createApp({
   app.get("/api/me", (req, res) => res.json(req.user));
   app.get("/api/bootstrap", (req, res) =>
     res.json({
+      public_origin: publicOrigin,
       user: req.user,
       users: db
         .prepare("SELECT * FROM users ORDER BY kind,name")

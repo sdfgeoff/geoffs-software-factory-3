@@ -4006,3 +4006,137 @@ code {
   overflow-y: auto;
   margin: 4px 8px;
 }
+
+.origin-view {
+  display: contents;
+}
+.origin-view[hidden] {
+  display: none;
+}
+.main.conversation-main {
+  height: var(--conversation-height, 100dvh);
+  min-height: 0;
+  overflow: hidden;
+}
+.conversation-main > .topbar {
+  flex-shrink: 0;
+}
+.conversation-workspace.thread-detail {
+  width: 100%;
+  max-width: none;
+  flex: 1;
+  min-height: 0;
+  height: auto;
+  box-shadow: none;
+}
+.conversation-workspace .detail-top {
+  flex-shrink: 0;
+  gap: 12px;
+  padding: 10px 28px;
+  flex-wrap: wrap;
+}
+.conversation-workspace .conversation-back {
+  font-size: 12px;
+}
+.conversation-workspace .detail-top > span {
+  margin-right: auto;
+}
+.conversation-workspace .detail-title {
+  padding: 16px max(28px, calc((100% - 900px) / 2)) 10px;
+  flex-shrink: 0;
+}
+.conversation-workspace .detail-origin {
+  margin-top: 7px;
+  font-size: 12px;
+}
+.conversation-workspace .thread-properties {
+  padding: 8px max(28px, calc((100% - 900px) / 2)) 12px;
+  flex-shrink: 0;
+}
+.conversation-workspace .thread-properties label {
+  font-size: 12px;
+}
+.conversation-workspace .thread-scroll {
+  min-height: 0;
+}
+.conversation-workspace .thread-scroll-content {
+  max-width: 900px;
+  margin: 0 auto;
+}
+.conversation-workspace .markdown {
+  font-size: 14px;
+  color: #465a3c;
+}
+.conversation-workspace > .reply-composer {
+  flex-shrink: 0;
+  max-height: calc(var(--conversation-height, 100dvh) * 0.42);
+  overflow-y: auto;
+  padding-inline: max(28px, calc((100% - 900px) / 2));
+}
+.conversation-workspace .reply-composer .mention-menu {
+  position: static;
+  width: auto;
+  max-height: 130px;
+  overflow-y: auto;
+  margin: 4px 8px;
+}
+.conversation-workspace .detail-title h1:focus {
+  outline: none;
+}
+.conversation-unavailable {
+  padding: 28px;
+}
+.conversation-unavailable h1 {
+  margin: 24px 0 12px;
+}
+@media (max-width: 700px) {
+  .conversation-workspace .detail-top {
+    padding: 8px 14px;
+    gap: 6px;
+  }
+  .conversation-workspace .detail-top > span {
+    display: none;
+  }
+  .conversation-workspace .detail-top > div {
+    margin-left: auto;
+  }
+  .conversation-workspace .detail-title {
+    padding: 10px 16px 6px;
+  }
+  .conversation-workspace .detail-title h1 {
+    font-size: 20px;
+    max-height: 84px;
+    overflow-y: auto;
+  }
+  .conversation-workspace .thread-properties {
+    padding: 6px 16px 8px;
+    gap: 10px;
+  }
+  .conversation-workspace > .reply-composer {
+    padding: 10px 16px;
+  }
+}
+@media (max-height: 600px) {
+  .conversation-workspace .detail-title {
+    padding-top: 5px;
+    padding-bottom: 5px;
+  }
+  .conversation-workspace .detail-origin {
+    display: none;
+  }
+  .conversation-workspace .thread-properties {
+    padding-block: 4px;
+  }
+  .conversation-workspace .detail-top {
+    min-height: 40px;
+    padding-block: 4px;
+  }
+}
+
+.missing-message {
+  margin: 16px 28px;
+  padding: 12px;
+  background: #fff5de;
+  color: #624814;
+  font-size: 13px;
+}

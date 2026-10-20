@@ -1,3 +1,4 @@
+import "./conversation-browser.mjs";
 import "./channel-browser.mjs";
 import "./reading-browser.mjs";
 import "./work-queue-browser.mjs";
@@ -575,7 +576,7 @@ test(
         .click();
       await expect(
         page
-          .getByRole("dialog", { name: "Thread details" })
+          .getByRole("region", { name: "Conversation", exact: true })
           .getByRole("heading", { name: "attachment-only.png", exact: true }),
       ).toBeVisible();
       await expect(page.locator(".thread-description img")).toBeVisible();
@@ -762,9 +763,7 @@ test(
         )
         .run(agent.user_id, new Date().toISOString());
       async function find(query) {
-        await page
-          .getByRole("button", { name: "Search everywhere", exact: true })
-          .click();
+        await page.keyboard.press("Control+k");
         await page.getByLabel("Search everything", { exact: true }).fill(query);
       }
       await page
@@ -807,7 +806,7 @@ test(
       ).toBeFocused();
       await page.keyboard.press("Escape");
       await expect(
-        page.getByRole("dialog", { name: "Thread details", exact: true }),
+        page.getByRole("region", { name: "Conversation", exact: true }),
       ).toBeVisible();
       await expect(
         page.getByRole("button", { name: "Activity", exact: true }),

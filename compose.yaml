@@ -44,6 +44,7 @@ services:
       AGENT_SPARK_TOKEN: ${AGENT_SPARK_TOKEN:?Run npm run setup first}
       AGENT_SAGE_TOKEN: ${AGENT_SAGE_TOKEN:?Run npm run setup first}
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:-}
     volumes:
       - server-data:/data
       - type: bind
