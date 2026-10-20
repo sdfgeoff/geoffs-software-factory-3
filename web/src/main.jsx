@@ -902,7 +902,7 @@ function App() {
     }
   }
   function go(p, id = null) {
-    const current = navigation.current;
+    const current = { ...navigation.current, scrollY: window.scrollY };
     history.replaceState(
       { ...history.state, tw: current },
       "",
@@ -911,6 +911,7 @@ function App() {
     const next = {
       ...current,
       page: p,
+      scrollY: 0,
       channelId: id,
       threadId: null,
       replyId: null,
@@ -929,7 +930,7 @@ function App() {
     else document.getElementById("new-thread-message")?.focus();
   }
   function openThread(id, tab = "discussion", branchId = null, replyId = null) {
-    const current = navigation.current;
+    const current = { ...navigation.current, scrollY: window.scrollY };
     if (
       current.threadId === id &&
       (current.replyId || null) === replyId &&

@@ -72,7 +72,67 @@ for (const width of [1440, 390])
             body: "Another topic",
           },
         });
+        for (let i = 0; i < 60; i++)
+          await page.request.post(base + "/api/threads", {
+            data: {
+              channel_id: 1,
+              title: `History conversation ${i}`,
+              body: "Settled long-list sample",
+            },
+          });
         await page.goto(base);
+        await expect(page.locator(".origin-view .thread-row")).toHaveCount(62);
+        // Let the initial bootstrap and data rendering settle before scrolling;
+        // scrolling itself must not depend on a later React render.
+        await page.waitForTimeout(1500);
+        await page.evaluate(() => window.scrollTo(0, 2500));
+        const before = await page.evaluate(() => window.scrollY);
+        assert.ok(before >= 2400);
+        const scrollDelta = () =>
+          page.evaluate(
+            (expected) => Math.abs(window.scrollY - expected),
+            before,
+          );
+        const index = await page
+          .locator(".origin-view .thread-row")
+          .evaluateAll((rows) =>
+            rows.findIndex((el) => {
+              const rect = el.getBoundingClientRect();
+              return rect.top > 80 && rect.bottom < innerHeight - 50;
+            }),
+          );
+        assert.ok(index >= 0);
+        const scrolledTrigger = page
+          .locator(".origin-view .thread-row")
+          .nth(index);
+        await scrolledTrigger.focus();
+        await page.keyboard.press("Enter");
+        assert.ok(
+          Math.abs(
+            (await page.evaluate(() => history.state.twOrigin.scrollY)) -
+              before,
+          ) < 3,
+          "navigation captures live scroll",
+        );
+        await page
+          .getByRole("button", { name: "Close thread", exact: true })
+          .click();
+        await expect.poll(scrollDelta).toBeLessThan(3);
+        await expect(scrolledTrigger).toBeFocused();
+        await page.goForward();
+        await expect(page.locator(".conversation-workspace")).toBeVisible();
+        await page.goBack();
+        await expect.poll(scrollDelta).toBeLessThan(3);
+        if (width === 1440) {
+          await page
+            .getByRole("button", { name: /^Inbox/ })
+            .first()
+            .click();
+          await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
+          await page.goBack();
+          await expect.poll(scrollDelta).toBeLessThan(3);
+        }
+        await page.evaluate(() => window.scrollTo(0, 0));
         const filter = page.getByPlaceholder("Search conversations…");
         await filter.fill("Release planning");
         const trigger = page
