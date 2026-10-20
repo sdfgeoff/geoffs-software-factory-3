@@ -1,3 +1,4 @@
+import { installActivity } from "./activity.mjs";
 import { installWorkQueue } from "./work-queue.mjs";
 import { installOrchestration, gitIdentity } from "./orchestration.mjs";
 import express from "express";
@@ -120,6 +121,7 @@ export function createApp({
     }
     next();
   });
+  app.use("/api/worker/activity", express.json({ limit: "3mb" }));
   app.use(express.json({ limit: "1mb" }));
   app.get("/api/health", (req, res) =>
     res.json({ ok: true, version: "0.1.0" }),
@@ -1176,6 +1178,7 @@ export function createApp({
         .json({ error: "Worker lease expired; heartbeat before continuing" });
     next();
   });
+  const activity = installActivity({ app, db, admin, env });
   app.get("/api/worker/inbox", (req, res) =>
     res.json(
       db
@@ -1273,6 +1276,7 @@ export function createApp({
     if (closed) return;
     closed = true;
     clearInterval(scheduleTimer);
+    activity.shutdown();
     for (const response of streams) response.end();
     db.close();
   };

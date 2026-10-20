@@ -14,6 +14,11 @@ x-agent: &agent
   cap_drop: [ALL]
   pids_limit: 512
   shm_size: 256mb
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
   healthcheck:
     test:
       [
@@ -87,6 +92,8 @@ services:
       THREADWORK_URL: http://server:3001
       AGENT_TOKEN: ${AGENT_SPARK_TOKEN}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      AGENT_ACTIVITY: ${AGENT_ACTIVITY:-true}
+      AGENT_ACTIVITY_STDOUT: ${AGENT_ACTIVITY_STDOUT:-true}
     volumes:
       - spark-data:/state
   sage:
@@ -95,6 +102,8 @@ services:
       THREADWORK_URL: http://server:3001
       AGENT_TOKEN: ${AGENT_SAGE_TOKEN}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      AGENT_ACTIVITY: ${AGENT_ACTIVITY:-true}
+      AGENT_ACTIVITY_STDOUT: ${AGENT_ACTIVITY_STDOUT:-true}
     volumes:
       - sage-data:/state
   agent:
@@ -104,6 +113,8 @@ services:
       THREADWORK_URL: ${THREADWORK_URL:-http://server:3001}
       AGENT_TOKEN: ${AGENT_TOKEN:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      AGENT_ACTIVITY: ${AGENT_ACTIVITY:-true}
+      AGENT_ACTIVITY_STDOUT: ${AGENT_ACTIVITY_STDOUT:-true}
     volumes:
       - custom-agent-data:/state
 volumes:

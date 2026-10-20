@@ -11,6 +11,7 @@ import { randomUUID } from "node:crypto";
 import { createApi } from "./api.mjs";
 import { CodexClient, notificationPrompt } from "./codex.mjs";
 import { workerMcpConfig } from "./mcp-config.mjs";
+import { ActivityRecorder } from "./activity.mjs";
 
 const instance = randomUUID();
 const root = resolve(process.env.AGENT_DATA_DIR || ".agent-data");
@@ -43,6 +44,11 @@ let client,
   stopVersion = null,
   recover = disk.active;
 let completedTurns = new Set();
+const activity = new ActivityRecorder({
+  root,
+  api,
+  context: () => ({ session_id: disk.sessionId, turn_id: activeTurn }),
+});
 for (const signal of ["SIGTERM", "SIGINT"])
   process.on(signal, () => {
     stopped = true;
@@ -51,10 +57,11 @@ for (const signal of ["SIGTERM", "SIGINT"])
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 async function log(message, level = "info") {
-  console.log(`[${level}] ${message}`);
+  activity.record({ type: "worker/log", payload: { level, message } });
+  console.log(`[${level}] ${activity.sanitize(message)}`);
   await api("/worker/log", {
     method: "POST",
-    body: { message: message.slice(0, 2000), level },
+    body: { message: activity.sanitize(message).slice(0, 2000), level },
   }).catch(() => {});
 }
 function instructions() {
@@ -81,6 +88,10 @@ async function connect() {
     },
   });
   client.on("closed", () => {
+    activity.record({
+      type: "worker/disconnected",
+      payload: { message: "Codex process disconnected" },
+    });
     error = "Codex process disconnected; resuming the same session";
     state = "error";
     activeTurn = null;
@@ -88,6 +99,7 @@ async function connect() {
     recover = disk.active;
   });
   client.on("notification", (message) => {
+    activity.notification(message);
     if (message.method === "turn/completed") {
       const turn = message.params.turn;
       completedTurns.add(turn.id);
@@ -306,7 +318,11 @@ while (!stopped) {
       const runtime = client;
       if (stopped) break;
       if (!runtime || runtime.closed) continue;
+      let deliveredTurn;
+      let delivery;
       if (activeTurn) {
+        deliveredTurn = activeTurn;
+        delivery = "steer";
         try {
           await runtime.call("turn/steer", {
             threadId: disk.sessionId,
@@ -330,6 +346,8 @@ while (!stopped) {
           sandboxPolicy: { type: "dangerFullAccess" },
           ...(config.model ? { model: config.model } : {}),
         });
+        deliveredTurn = turn.turn.id;
+        delivery = recover ? "recovery" : "start";
         activeTurn = completedTurns.has(turn.turn.id) ? null : turn.turn.id;
         await log(`Started turn with ${batch.length} notification(s).`);
       }
@@ -337,6 +355,11 @@ while (!stopped) {
         throw new Error(
           "Codex disconnected before delivery was journaled; retaining notifications for replay.",
         );
+      activity.record({
+        type: "worker/wake",
+        turn_id: deliveredTurn,
+        payload: { notification_ids: batch.map((n) => n.id), delivery },
+      });
       // Save acceptance before ACK: a crash can replay an id, but cannot lose an undelivered notification.
       disk.active = !!activeTurn;
       disk.accepted = [...disk.accepted, ...batch.map((n) => n.id)].slice(
@@ -373,5 +396,6 @@ while (!stopped) {
   }
   await delay(Number(process.env.POLL_INTERVAL_MS || 1500));
 }
+activity.stop();
 clearInterval(heartbeatTimer);
 client?.stop();

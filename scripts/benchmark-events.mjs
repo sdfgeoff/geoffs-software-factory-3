@@ -183,7 +183,7 @@ try {
     newest: report.counts.threads,
   };
   report.targets = targets;
-  db.exec("DROP INDEX event_thread; PRAGMA user_version=6");
+  db.exec("DROP INDEX event_thread; PRAGMA user_version=7");
   await phase("before");
   report.pre_migration_storage = size();
   await stop();

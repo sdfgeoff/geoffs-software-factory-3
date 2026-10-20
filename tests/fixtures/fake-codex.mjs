@@ -44,7 +44,48 @@ createInterface({ input: process.stdin }).on("line", (line) => {
   if (method === "turn/start") {
     const tid = "turn-" + ++turn;
     result = { turn: { id: tid, status: "inProgress" } };
+    const context = { threadId: request.params.threadId, turnId: tid };
+    send({ method: "turn/started", params: { ...context, turn: result.turn } });
+    send({
+      method: "item/started",
+      params: {
+        ...context,
+        item: {
+          id: "command-" + tid,
+          type: "commandExecution",
+          command: "echo fixture",
+          cwd: "/workspace",
+          status: "inProgress",
+        },
+      },
+    });
     const finish = () => {
+      send({
+        method: "item/completed",
+        params: {
+          ...context,
+          item: {
+            id: "command-" + tid,
+            type: "commandExecution",
+            command: "echo fixture",
+            status: "completed",
+            aggregatedOutput: "fixture output",
+            exitCode: 0,
+          },
+        },
+      });
+      send({
+        method: "item/completed",
+        params: {
+          ...context,
+          item: {
+            id: "summary-" + tid,
+            type: "reasoning",
+            summary: ["Checking the fixture"],
+            content: ["PRIVATE_RAW_REASONING_MUST_NOT_BE_LOGGED"],
+          },
+        },
+      });
       send({
         method: "item/agentMessage/delta",
         params: { delta: "Private runtime response. Never post me." },

@@ -1,7 +1,7 @@
 # Per-thread event index: 3 million events
 
 Measured on 2026-10-20 with Node 24.22.0, application code based on `27fad999`,
-and the schema-v7 `events(thread_id,id)` index. Raw samples, query plans and
+and the original schema-v7 `events(thread_id,id)` index. Raw samples, query plans and
 response hashes are in [event-index.json](event-index.json).
 
 The isolated fixture follows stress test #12: 10,000 threads, 300 mixed-length
@@ -42,7 +42,8 @@ The warm upgrade took 6,907.97 ms. The new index occupied 45,121,536 allocated
 bytes (43.03 MiB), measured immediately before/after migration using page counts
 excluding the freelist. Physical file growth differs because free pages are
 reused. Startup builds the index transactionally with `IF NOT EXISTS` and
-advances the schema to version 7.
+originally advanced the schema to version 7. Integration with main’s agent-activity
+storage subsequently moved this combined upgrade to version 8.
 
 Three committed SQL batches of 1,000 short-payload events per case:
 
@@ -82,3 +83,34 @@ upgrade work. This run reused the closed fixture from the inbox-index benchmark,
 originally generated with the reviewed stress-test #12 seed loop. The committed
 harness also passed a one-thread/300-reply smoke run. Database copies and their
 synthetic sessions are excluded from the committed evidence.
+
+## Integration validation on main `ef600de`
+
+The final revision retains main’s agent-activity tables and indexes alongside
+`event_thread`, with combined schema version 8. Migration tests cover both v6
+and main’s v7, preserving existing agent activity and ticket links across reopens.
+All 72 unit/integration tests and 12 browser scenarios pass, including the new
+admin activity scenario. Build, formatting and syntax checks pass.
+
+The full fixture was rerun after those checks finished, with the same harness
+and warm sequential methodology. Raw evidence: [event-index-integrated.json](event-index-integrated.json).
+The baseline retains main’s activity schema and both inbox indexes; only the
+per-thread event index is absent. Reopening upgrades from v7 to v8.
+
+| Conversation | Before median / max | After median / max |
+| --- | ---: | ---: |
+| old | 647.09 / 668.79 ms | 6.21 / 9.66 ms |
+| middle | 325.39 / 329.35 ms | 8.24 / 14.97 ms |
+| newest | 6.93 / 8.94 ms | 7.06 / 13.51 ms |
+
+All replies, latest-100 activity payloads and full response hashes match.
+
+| 1,000-event batch | Before median / max | After median / max |
+| --- | ---: | ---: |
+| hot | 6.32 / 7.04 ms | 6.70 / 13.98 ms |
+| spread | 6.22 / 11.78 ms | 41.80 / 48.00 ms |
+
+The warm upgrade took 1914.79 ms; allocated index storage remains
+45,121,536 bytes (43.03 MiB). Spread-insert overhead persists,
+but its magnitude varies substantially between runs. Retaining both reports
+makes that variability explicit; neither establishes a production write budget.
