@@ -265,8 +265,11 @@ for (const width of [1440, 390])
           page.getByLabel("Search everything", { exact: true }),
         ).toHaveValue("Reading sample 4");
         await page.keyboard.press("Escape");
+        if (width === 390)
+          await page.getByRole("button", { name: "Open navigation" }).click();
         await page
-          .getByRole("button", { name: "Open inbox", exact: true })
+          .locator(".sidebar")
+          .getByRole("button", { name: /^Inbox/ })
           .click();
         await page
           .locator(".inbox-item")

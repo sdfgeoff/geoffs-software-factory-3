@@ -100,11 +100,13 @@ export function WorkPreferences({
       <h3>
         {agent ? "Voluntary work notifications" : "Your work notifications"}
       </h3>
-      <p className="muted">
-        Notifications offer work; claiming is voluntary. Only subscribed
-        channels are eligible. Work and review permissions are configured in
-        Repositories.
-      </p>
+      <details className="context-help">
+        <summary>About notifications</summary>
+        <p>
+          Notifications offer work from your subscribed channels; claiming is
+          voluntary.
+        </p>
+      </details>
       {error && (
         <p className="form-error" role="alert">
           {error}
@@ -174,12 +176,16 @@ export function WorkQueuePage({ api, data, refreshKey, openThread }) {
     <>
       <section className="page-heading">
         <div>
-          <div className="eyebrow">PICK UP THE NEXT PIECE</div>
           <h1>Work queue</h1>
-          <p>
-            Eligible work from your subscribed channels. Claim one block at a
-            time; submitted work frees your capacity.
-          </p>
+          <details className="context-help">
+            <summary>How claiming works</summary>
+            <p>
+              Eligible work comes from subscribed channels. Claim one block at a
+              time; submitting frees your capacity. Work and review permissions
+              are configured in Repositories. Work must be Ready and unassigned;
+              reviewers cannot review their own output.
+            </p>
+          </details>
         </div>
         <button className="button subtle" onClick={refresh}>
           <RefreshCw size={15} />
@@ -267,10 +273,7 @@ export function WorkQueuePage({ api, data, refreshKey, openThread }) {
               </article>
             ))
           ) : (
-            <p className="muted">
-              No eligible work right now. Subscribe to a channel and move an
-              unassigned ticket to Ready; implementation permission is required.
-            </p>
+            <p className="muted">No eligible work right now.</p>
           )}
         </section>
         <section className="orchestration-card">
@@ -331,10 +334,7 @@ export function WorkQueuePage({ api, data, refreshKey, openThread }) {
               );
             })
           ) : (
-            <p className="muted">
-              No eligible reviews right now. Submitted work appears here for
-              subscribed reviewers who did not produce it.
-            </p>
+            <p className="muted">No eligible reviews right now.</p>
           )}
         </section>
         <section className="orchestration-card">

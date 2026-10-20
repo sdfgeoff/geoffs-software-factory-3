@@ -38,7 +38,6 @@ import {
   Play,
   Pause,
   Square,
-  Terminal,
   Copy,
   FileText,
   Download,
@@ -304,42 +303,17 @@ function Login({ onLogin }) {
     [busy, setBusy] = useState(false);
   return (
     <main className="login-page">
-      <div className="login-art">
-        <div className="brand">
-          <span className="brand-icon">
-            <i />
-            <i />
-            <i />
-          </span>
-          threadwork<span className="brand-dot">®</span>
-        </div>
-        <div className="login-statement">
-          <span className="eyebrow">A SHARED PLACE TO MAKE PROGRESS</span>
-          <h1>
-            Good work starts
-            <br />
-            with a conversation.
-          </h1>
-          <p>
-            Bring the discussion, the decisions, and your AI teammates together.
-          </p>
-          <div className="login-illustration">
-            <span>
-              <MessageSquare /> Conversation
-            </span>
-            <ArrowRight />
-            <span>
-              <Columns3 /> Progress
-            </span>
-          </div>
-        </div>
-        <div className="login-footer">People and agents. On the same page.</div>
-      </div>
       <div className="login-form">
         <div className="login-inner">
-          <span className="eyebrow">YOUR WORKSPACE, CONNECTED</span>
-          <h2>Welcome back.</h2>
-          <p className="muted">Sign in to your local workspace.</p>
+          <div className="brand login-brand">
+            <span className="brand-icon">
+              <i />
+              <i />
+              <i />
+            </span>
+            threadwork
+          </div>
+          <h1>Sign in</h1>
           <form
             onSubmit={async (e) => {
               e.preventDefault();
@@ -496,7 +470,6 @@ function GlobalSearch({ onClose, onChoose, refreshKey, query, setQuery }) {
       initialFocus='input[aria-label="Search everything"]'
       title="Search everywhere"
       backdropClassName="search-backdrop"
-      subtitle="Channels, conversations, replies, people, attachments, and your reminders."
       onClose={onClose}
       wide
     >
@@ -576,11 +549,14 @@ function GlobalSearch({ onClose, onChoose, refreshKey, query, setQuery }) {
             Load more results
           </button>
         )}
-        <p className="global-search-footnote">
-          Search matches text and attachment filenames. File contents are
-          excluded. Reminders are private to you; runtime logs require admin
-          access.
-        </p>
+        <details className="context-help">
+          <summary>Search scope and privacy</summary>
+          <p>
+            Search matches text and attachment filenames, including archived
+            channels. File contents are excluded. Reminders are private to you;
+            runtime logs require admin access.
+          </p>
+        </details>
       </div>
     </Dialog>
   );
@@ -1188,7 +1164,6 @@ function App() {
   const shown = (
     loadedListKey === `${listKey}:${windowKey}` ? threads : []
   ).filter((t) => !statusFilter || t.status_id === Number(statusFilter));
-  const activeAgents = data.agents.filter((a) => online(a)).length;
   return (
     <div className="app-shell">
       {mobile && (
@@ -1208,18 +1183,8 @@ function App() {
             <i />
             <i />
           </span>
-          threadwork<span className="brand-dot">®</span>
+          threadwork
         </a>
-        <div className="workspace-name">
-          <span className="workspace-mark">W</span>
-          <div>
-            <strong>Our workspace</strong>
-            <span>
-              <i className="live-dot" /> Local network
-            </span>
-          </div>
-          <span className="workspace-tag">V1</span>
-        </div>
         <div className="nav-label">WORKSPACE</div>
         <nav>
           <button
@@ -1308,17 +1273,6 @@ function App() {
           )}
         </nav>
         <div className="sidebar-bottom">
-          <div className="agent-presence">
-            <span className="presence-symbol">
-              <Bot size={17} />
-            </span>
-            <div>
-              <strong>
-                {activeAgents} agent{activeAgents === 1 ? "" : "s"} connected
-              </strong>
-              <span>Working alongside your team</span>
-            </div>
-          </div>
           {data.user.admin && (
             <button
               className={`settings-link ${page === "settings" ? "active" : ""}`}
@@ -1372,23 +1326,6 @@ function App() {
             >
               <Menu size={20} />
             </button>
-            <span>Workspace</span>
-            <ChevronRight size={14} />
-            <strong>
-              {page === "work"
-                ? channel
-                  ? "# " + channel.name
-                  : "All work"
-                : page === "inbox"
-                  ? "Inbox"
-                  : page === "team"
-                    ? "People & agents"
-                    : page === "queue"
-                      ? "Work queue"
-                      : page === "repositories"
-                        ? "Repositories"
-                        : "Settings"}
-            </strong>
           </div>
           <div className="topbar-right">
             <button
@@ -1401,19 +1338,12 @@ function App() {
               <span>Search everything…</span>
               <kbd>⌘ K</kbd>
             </button>
-            <span className={`connection ${connected ? "" : "disconnected"}`}>
-              <Wifi size={13} />
-              {connected ? "Live" : "Reconnecting"}
-            </span>
-            <button
-              className="icon-button notification-button"
-              onClick={() => go("inbox")}
-              aria-label="Open inbox"
-            >
-              <Bell size={18} />
-              {data.unread > 0 && <i />}
-            </button>
-            <Avatar user={data.user} size="small" />
+            {!connected && (
+              <span className="connection disconnected" role="status">
+                <Wifi size={13} />
+                Reconnecting
+              </span>
+            )}
           </div>
         </header>
         <div className="origin-view" hidden={!!selectedId}>
@@ -1425,9 +1355,6 @@ function App() {
                   <>
                     <section className="page-heading">
                       <div>
-                        <div className="eyebrow">
-                          CONVERSATIONS INTO PROGRESS
-                        </div>
                         <h1>
                           {channel ? (
                             <>
@@ -1444,10 +1371,7 @@ function App() {
                             {threadPage.total}
                           </span>
                         </h1>
-                        <p>
-                          {channel?.description ||
-                            "Every conversation has a place. Every idea has a next step."}
-                        </p>
+                        {channel?.description && <p>{channel.description}</p>}
                       </div>
                       <div className="heading-actions">
                         {channel && (
@@ -1656,34 +1580,16 @@ function App() {
                       />
                     ) : (
                       <>
-                        <div className="work-meta">
-                          <span>
-                            {view === "threads"
-                              ? "Conversations, in the order they began"
-                              : "One conversation. A clear path forward."}
-                          </span>
-                          <span>
-                            {loading ? (
-                              <>
-                                <LoaderCircle size={12} className="spin" />
-                                Updating
-                              </>
-                            ) : (
-                              <>
-                                <span className="live-dot" />{" "}
-                                {view === "threads"
-                                  ? "Newest first"
-                                  : "Live board"}
-                              </>
-                            )}
-                          </span>
-                        </div>
+                        {view === "threads" && (
+                          <div className="work-order">Newest first</div>
+                        )}
+                        {loading && <span role="status">Updating…</span>}
                         {!shown.length ? (
                           <Empty
                             title={
                               search
                                 ? "No matching conversations"
-                                : "Make room for your next idea."
+                                : "No conversations yet"
                             }
                             icon={search ? Search : MessageSquare}
                             action={
@@ -1880,26 +1786,11 @@ function App() {
                                         </footer>
                                       </article>
                                     ))}
-                                  {!shown.some((t) => t.status_id === s.id) && (
-                                    <div className="column-empty">
-                                      Drop a thread here
-                                    </div>
-                                  )}
                                 </div>
                               </div>
                             ))}
                           </section>
                         )}
-                        <footer className="page-footer">
-                          <span>
-                            <MessageSquare size={13} /> A thread in
-                            conversation. A ticket on the board.
-                          </span>
-                          <span>
-                            Shared by people & agents{" "}
-                            <span className="footer-spark">✳</span>
-                          </span>
-                        </footer>
                       </>
                     )}
                   </>
@@ -1908,14 +1799,10 @@ function App() {
                   <>
                     <section className="page-heading">
                       <div>
-                        <div className="eyebrow">STAY IN THE LOOP</div>
                         <h1>
                           Your inbox
                           <span className="heading-count">{data.unread}</span>
                         </h1>
-                        <p>
-                          Replies, mentions, and changes to the work you follow.
-                        </p>
                       </div>
                       <div className="heading-actions">
                         <button
@@ -2055,14 +1942,12 @@ function App() {
                   <>
                     <section className="page-heading">
                       <div>
-                        <div className="eyebrow">YOUR TEAM, TOGETHER</div>
                         <h1>
                           People & agents
                           <span className="heading-count">
                             {data.users.length}
                           </span>
                         </h1>
-                        <p>Different perspectives. One shared workspace.</p>
                       </div>
                       {data.user.admin && (
                         <div className="heading-actions">
@@ -2086,7 +1971,6 @@ function App() {
                     <div className="team-section">
                       <div className="section-title">
                         <h2>AI teammates</h2>
-                        <span>Persistent sessions. Independent voices.</span>
                       </div>
                       <div className="team-grid">
                         {data.agents.map((a) => (
@@ -2096,7 +1980,6 @@ function App() {
                             key={a.user_id}
                           >
                             <div className="agent-card-top">
-                              <Avatar user={{ name: a.name, kind: "agent" }} />
                               <span className={`state-badge ${agentState(a)}`}>
                                 <i />
                                 {agentState(a).replace("_", " ")}
@@ -2108,12 +1991,6 @@ function App() {
                             </h3>
                             <p>{a.role}</p>
                             <div className="agent-card-footer">
-                              <span>
-                                <Terminal size={13} />
-                                {a.session_id
-                                  ? "Persistent session"
-                                  : "Awaiting first session"}
-                              </span>
                               {data.user.admin && (
                                 <button
                                   className="text-button"
@@ -2130,24 +2007,6 @@ function App() {
                             </div>
                           </article>
                         ))}
-                        <button
-                          className="agent-card add-agent"
-                          onClick={() =>
-                            data.user.admin
-                              ? setModal({ type: "agent" })
-                              : notify("Ask your admin to create an agent.")
-                          }
-                        >
-                          <span>
-                            <Plus size={24} />
-                          </span>
-                          <h3>A new perspective</h3>
-                          <p>
-                            Give an agent a name, a role,
-                            <br />
-                            and a place on your team.
-                          </p>
-                        </button>
                       </div>
                       <div className="section-title people-title">
                         <h2>People</h2>
@@ -2353,9 +2212,7 @@ function SettingsPage({ data, act, setModal, notify }) {
     <>
       <section className="page-heading">
         <div>
-          <div className="eyebrow">MAKE IT YOUR OWN</div>
           <h1>Workspace settings</h1>
-          <p>A few good defaults, shaped around your team.</p>
         </div>
       </section>
       <div className="settings-content">
@@ -2461,11 +2318,7 @@ function SettingsPage({ data, act, setModal, notify }) {
         <section className="settings-section">
           <div>
             <h2>Agent workspaces</h2>
-            <p>
-              Each agent runs in its own worker, with one persistent Codex
-              session. Configure credentials and subscriptions in People &
-              agents.
-            </p>
+            <p>Manage agents in People &amp; agents.</p>
           </div>
           <button
             className="button"
@@ -2475,16 +2328,13 @@ function SettingsPage({ data, act, setModal, notify }) {
             Create agent
           </button>
         </section>
-        <section className="architecture-note">
-          <Terminal size={22} />
-          <div>
-            <strong>Your infrastructure. Your conversations.</strong>
-            <p>
-              Data and attachments live on your server. Agent workspaces and
-              Codex credentials stay with their worker containers.
-            </p>
-          </div>
-        </section>
+        <details className="context-help">
+          <summary>Data and credentials</summary>
+          <p>
+            Data and attachments live on your server. Agent workspaces and Codex
+            credentials stay with their worker containers.
+          </p>
+        </details>
       </div>
     </>
   );
@@ -3056,11 +2906,7 @@ function ThreadDetail({
               {!t.replies.length && (
                 <div className="discussion-empty">
                   <MessageSquare size={20} />
-                  <p>
-                    There’s room for your perspective.
-                    <br />
-                    <span>Reply, or mention a teammate to bring them in.</span>
-                  </p>
+                  <p>No replies yet</p>
                 </div>
               )}
             </div>
@@ -3508,7 +3354,10 @@ function ReplyComposer({
                 <Paperclip size={17} />
               )}
             </button>
-            <span className="composer-note">Markdown supported</span>
+            <details className="context-help formatting-help">
+              <summary>Formatting</summary>
+              <p>Markdown supported. Use @username to mention a teammate.</p>
+            </details>
           </div>
           <button
             className="button primary"
@@ -3690,15 +3539,7 @@ function ModalRouter({
   if (modal.type === "channel") {
     const c = modal.channel;
     return (
-      <Dialog
-        title={c ? "Edit channel" : "A place for shared work."}
-        subtitle={
-          c
-            ? "Update this channel for everyone."
-            : "Channels bring related conversations and work together."
-        }
-        onClose={close}
-      >
+      <Dialog title={c ? "Edit channel" : "Create channel"} onClose={close}>
         <form
           onSubmit={(e) =>
             submit(e, async (f) => {
@@ -3787,7 +3628,6 @@ function ModalRouter({
     return (
       <Dialog
         title={t ? "Edit thread" : "Start a conversation."}
-        subtitle="A conversation here. A work item on the board."
         onClose={close}
         wide
       >
@@ -3856,9 +3696,12 @@ function ModalRouter({
                 placeholder="Share context, a question, or a first idea. Mention teammates with @username."
                 maxLength={50000}
               />
-              <small id="thread-description-help">
-                Markdown supported. Use @username to mention a teammate.
-              </small>
+              <details className="context-help">
+                <summary>Formatting</summary>
+                <small id="thread-description-help">
+                  Markdown supported. Use @username to mention a teammate.
+                </small>
+              </details>
             </label>
             <div className="form-row">
               <label>
@@ -3902,11 +3745,7 @@ function ModalRouter({
   }
   if (modal.type === "user")
     return (
-      <Dialog
-        title="Bring someone into the loop."
-        subtitle="Create an account for a teammate on your network."
-        onClose={close}
-      >
+      <Dialog title="Add person" onClose={close}>
         <form
           onSubmit={(e) =>
             submit(e, async (f) => {
@@ -3965,11 +3804,7 @@ function ModalRouter({
     );
   if (modal.type === "agent")
     return (
-      <Dialog
-        title="Meet your next teammate."
-        subtitle="A name, a role, and an independent voice."
-        onClose={close}
-      >
+      <Dialog title="Create agent" onClose={close}>
         <form
           onSubmit={(e) =>
             submit(e, async (f) => {
@@ -4024,14 +3859,13 @@ function ModalRouter({
                 maxLength={100}
               />
             </label>
-            <div className="form-callout">
-              <Bot size={19} />
+            <details className="context-help">
+              <summary>Worker setup</summary>
               <p>
-                This agent keeps one session across all channels. It decides
-                when to participate. Connect a worker container after creating
-                it.
+                Connect a worker container after creating this agent. It keeps
+                one session across channels; see the README for setup.
               </p>
-            </div>
+            </details>
           </div>
           {footer("Create agent")}
         </form>
@@ -4096,7 +3930,7 @@ function AgentDetail({
   return (
     <Dialog
       title={agent.name}
-      subtitle={`@${agent.username} · one session, across every channel`}
+      subtitle={`@${agent.username}`}
       onClose={close}
       wide
     >
@@ -4180,13 +4014,13 @@ function AgentDetail({
                 Interrupt & pause
               </button>
             </div>
-            <div className="agent-session">
-              <span>CODEX SESSION</span>
+            <details className="context-help">
+              <summary>Session details</summary>
               <code>
                 {agent.session_id ||
                   "Created after sign-in and first connection"}
               </code>
-            </div>
+            </details>
             <div className="auth-box">
               <div>
                 <h3>Codex authentication</h3>
@@ -4235,14 +4069,14 @@ function AgentDetail({
               </div>
             )}
             {!online(agent) && (
-              <div className="form-callout">
-                <Terminal size={19} />
+              <details className="context-help">
+                <summary>Connect a worker</summary>
                 <p>
-                  Start this agent’s Docker Compose service. New agents need
-                  their server token and a dedicated persistent volume. Setup
-                  details are in the README.
+                  Start this agent’s Docker Compose service with its server
+                  token and a dedicated persistent volume. Setup details are in
+                  the README.
                 </p>
-              </div>
+              </details>
             )}
           </>
         )}
@@ -4387,9 +4221,10 @@ function AgentDetail({
         )}
       </div>
       <footer className="dialog-footer">
-        <span className="muted">
-          Runtime responses are never automatically posted.
-        </span>
+        <details className="context-help">
+          <summary>Posting behavior</summary>
+          <p>Runtime responses are never automatically posted.</p>
+        </details>
         <button className="button" onClick={close}>
           Close
         </button>

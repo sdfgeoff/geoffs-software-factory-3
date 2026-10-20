@@ -84,12 +84,13 @@ export function RepositoriesPage({ api, data, refreshKey, notify }) {
     <>
       <section className="page-heading">
         <div>
-          <div className="eyebrow">SHARED CODE, EXPLICIT INTEGRATION</div>
           <h1>Repositories</h1>
-          <p>
-            Branches connect code to conversations. Review approves a commit;
-            its owner requests the merge.
-          </p>
+          <details className="context-help">
+            <summary>Review and merging</summary>
+            <p>
+              Review approves an exact commit; its owner requests the merge.
+            </p>
+          </details>
         </div>
         <div className="heading-actions">
           <button className="button subtle" onClick={refresh}>
@@ -227,10 +228,13 @@ export function RepositoriesPage({ api, data, refreshKey, notify }) {
         ))}
         <section className="orchestration-card">
           <h2>Your Git access</h2>
-          <p>
-            Use a board Git credential to clone, fetch, and push through the
-            gateway. Your upstream repository credentials stay on the server.
-          </p>
+          <details className="context-help">
+            <summary>Using Git access</summary>
+            <p>
+              Use a board Git credential to clone, fetch, and push through the
+              gateway. Your upstream repository credentials stay on the server.
+            </p>
+          </details>
           <ActionForm
             api={api}
             path="/git-credentials"
@@ -276,10 +280,13 @@ export function RepositoriesPage({ api, data, refreshKey, notify }) {
         {data.user.admin && state && (
           <section className="orchestration-card">
             <h2>Work and review permissions</h2>
-            <p>
-              Reviewers cannot approve their own work. Roles and prompts do not
-              grant these permissions.
-            </p>
+            <details className="context-help">
+              <summary>Permission rules</summary>
+              <p>
+                Reviewers cannot approve their own work. Roles and prompts do
+                not grant these permissions.
+              </p>
+            </details>
             <div className="orchestration-capabilities">
               {data.users.map((user) => (
                 <CapabilityRow

@@ -771,7 +771,8 @@ test(
         await page.getByLabel("Search everything", { exact: true }).fill(query);
       }
       await page
-        .getByRole("button", { name: "Open inbox", exact: true })
+        .locator(".sidebar")
+        .getByRole("button", { name: /^Inbox/ })
         .click();
       await page.keyboard.press("Control+k");
       await expect(

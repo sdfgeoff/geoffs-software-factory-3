@@ -443,7 +443,7 @@ tool(
 );
 tool(
   "download_attachment",
-  "Download an attachment to an existing directory in your workspace. Read the file using your normal tools.",
+  "Download an attachment to a new destination file inside your workspace. The parent directory must already exist; existing files are never overwritten. Accepts workspace-relative or absolute paths (for example, downloads/report.txt). Read the saved file using your normal tools.",
   { attachment_id: z.string().uuid(), path: z.string() },
   async ({ attachment_id, path }) => {
     const safe = await workspacePath(path, true);
