@@ -226,3 +226,111 @@ test(
     }
   },
 );
+
+test(
+  "browser: bootstrap snapshots and errors cannot overwrite newer state",
+  { timeout: 90000 },
+  async () => {
+    const dir = mkdtempSync(join(tmpdir(), "tw-bootstrap-race-"));
+    const app = createApp({
+      dataDir: dir,
+      env: { ADMIN_PASSWORD: "bootstrap-race-password" },
+    });
+    const server = app.listen(0, "127.0.0.1");
+    await new Promise((r) => server.once("listening", r));
+    const url = `http://127.0.0.1:${server.address().port}`;
+    const browser = await chromium.launch({
+      headless: true,
+      executablePath: process.env.CHROMIUM_PATH || "/usr/bin/chromium",
+      args: ["--no-sandbox"],
+    });
+    const page = await browser.newPage();
+    page.setDefaultTimeout(10000);
+    try {
+      await page.request.post(url + "/api/login", {
+        data: { username: "admin", password: "bootstrap-race-password" },
+      });
+      await page.goto(url);
+      await expect(page.locator("aside .channel-nav")).toContainText("general");
+      await page.waitForTimeout(300);
+      const rename = async (name) => {
+        const r = await page.request.patch(url + "/api/channels/1", {
+          data: { name },
+        });
+        assert.equal(r.status(), 200, await r.text());
+      };
+      const sidebar = (name) =>
+        page.locator("aside nav button").filter({ hasText: name });
+      async function race(oldName, newName, error = false) {
+        let captured, release;
+        const snapshot = new Promise((r) => (captured = r)),
+          gate = new Promise((r) => (release = r));
+        let held = false;
+        const intercept = async (route) => {
+          if (held) return route.continue();
+          held = true;
+          const response = await route.fetch();
+          captured();
+          await gate;
+          if (error)
+            await route.fulfill({
+              status: 401,
+              contentType: "application/json",
+              body: JSON.stringify({ error: "Stale authentication failure" }),
+            });
+          else await route.fulfill({ response });
+        };
+        await page.route("**/api/bootstrap", intercept);
+        await rename(oldName);
+        await snapshot;
+        await rename(newName);
+        await expect(sidebar(newName)).toBeVisible();
+        release();
+        await page.waitForTimeout(300);
+        await expect(sidebar(newName)).toBeVisible();
+        await expect(sidebar(oldName)).toHaveCount(0);
+        await page.unroute("**/api/bootstrap", intercept);
+      }
+      await race("earlier-name", "newest-name");
+      await race("earlier-error", "newest-after-error", true);
+      // After these revisions are consumed, an unchanged fallback must leave the
+      // newest snapshot intact without needing another bootstrap to repair it.
+      const bootstraps = [];
+      page.on("request", (r) => {
+        if (new URL(r.url()).pathname === "/api/bootstrap") bootstraps.push(r);
+      });
+      await page.waitForTimeout(21000);
+      await expect(sidebar("newest-after-error")).toBeVisible();
+      assert.equal(
+        bootstraps.length,
+        0,
+        "unchanged fallback retains newest state",
+      );
+      // A failure from the latest request still retries on the next unchanged check.
+      let failOnce = true;
+      await page.route("**/api/bootstrap", async (route) => {
+        if (failOnce) {
+          failOnce = false;
+          await route.fulfill({
+            status: 503,
+            contentType: "application/json",
+            body: JSON.stringify({ error: "Latest bootstrap unavailable" }),
+          });
+        } else await route.continue();
+      });
+      await rename("recovered-latest");
+      await expect(page.locator(".toast.error")).toContainText(
+        "Latest bootstrap unavailable",
+      );
+      await expect(sidebar("recovered-latest")).toBeVisible({ timeout: 25000 });
+      await expect(
+        page.getByRole("button", { name: "Sign out", exact: true }),
+      ).toBeVisible();
+    } finally {
+      await browser.close();
+      await new Promise((r) => server.close(r));
+      app.locals.shutdown();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  },
+);

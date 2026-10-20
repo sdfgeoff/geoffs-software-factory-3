@@ -681,6 +681,10 @@ an affected open conversation reloads its detail. Updates to a hidden originatin
 list wait until return. Existing team presence and agent activity/runtime viewers
 retain their polling behavior. Drafts remain session-only.
 
+Only the newest bootstrap request in the current session may update workspace
+metadata or authentication/error state. Older delayed responses are ignored; a
+failed latest request still retries on the next revision check.
+
 Revision hints contain no event payloads or private reminder text. The bounded,
 in-memory journal retains 256 invalidations; a restart, expired cursor, broad
 metadata change or excess changed IDs requests authoritative recovery. This can
