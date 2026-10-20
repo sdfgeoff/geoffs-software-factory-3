@@ -6,6 +6,16 @@ import { mkdtempSync, rmSync, mkdirSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createApp } from "../server/app.mjs";
+async function expectSelectedView(group, name, count) {
+  await expect(group.getByRole("button", { pressed: true })).toHaveCount(1);
+  await expect(group.getByRole("button", { pressed: false })).toHaveCount(
+    count - 1,
+  );
+  await expect(
+    group.getByRole("button", { name, pressed: true }),
+  ).toBeVisible();
+}
+
 test(
   "browser: accounts, channels, shared views, attachments, inbox and responsive layout",
   { timeout: 60000 },
@@ -40,6 +50,10 @@ test(
     mkdirSync("test-results", { recursive: true });
     try {
       await page.goto(url);
+      await page.evaluate(() =>
+        localStorage.setItem("tw_view", "obsolete-view"),
+      );
+      await page.reload();
       await page.getByLabel("Username", { exact: true }).fill("admin");
       await page
         .getByLabel("Password", { exact: true })
@@ -48,6 +62,33 @@ test(
       await expect(
         page.getByRole("heading", { name: /All work/ }),
       ).toBeVisible();
+      const workViews = page.getByRole("group", {
+        name: "Work view",
+        exact: true,
+      });
+      await expectSelectedView(workViews, "Threads", 2);
+      await workViews
+        .getByRole("button", { name: "Threads", exact: true })
+        .focus();
+      await page.keyboard.press("Tab");
+      await expect(
+        workViews.getByRole("button", { name: "Board", exact: true }),
+      ).toBeFocused();
+      assert.notEqual(
+        await workViews
+          .getByRole("button", { name: "Board", exact: true })
+          .evaluate((el) => getComputedStyle(el).outlineStyle),
+        "none",
+      );
+      await page.keyboard.press("Space");
+      await expectSelectedView(workViews, "Board", 2);
+      await page.keyboard.press("Shift+Tab");
+      await expect(
+        workViews.getByRole("button", { name: "Threads", exact: true }),
+      ).toBeFocused();
+      await page.keyboard.press("Enter");
+      await expectSelectedView(workViews, "Threads", 2);
+      await expect(page.locator(".board-column")).toHaveCount(0);
       await page
         .getByRole("button", { name: "Create channel", exact: true })
         .click();
@@ -139,6 +180,44 @@ test(
         page.getByRole("heading", { name: generatedTitle, exact: true }),
       ).toBeVisible();
       await expect(page.locator(".thread-description img")).toBeVisible();
+      const conversationViews = page.getByRole("group", {
+        name: "Conversation view",
+        exact: true,
+      });
+      await expectSelectedView(conversationViews, /^Discussion/, 3);
+      await conversationViews
+        .getByRole("button", { name: "Discussion", exact: false })
+        .focus();
+      await page.keyboard.press("Tab");
+      await expect(
+        conversationViews.getByRole("button", {
+          name: "Activity",
+          exact: true,
+        }),
+      ).toBeFocused();
+      await page.keyboard.press("Space");
+      await expectSelectedView(conversationViews, "Activity", 3);
+      await expect(page.locator(".activity-list")).toBeVisible();
+      await expect(page.locator(".replies")).toHaveCount(0);
+      await page.keyboard.press("Tab");
+      await expect(
+        conversationViews.getByRole("button", {
+          name: "Branches",
+          exact: true,
+        }),
+      ).toBeFocused();
+      await page.keyboard.press("Enter");
+      await expectSelectedView(conversationViews, "Branches", 3);
+      await expect(
+        page.getByRole("heading", { name: "Linked branches", exact: true }),
+      ).toBeVisible();
+      await expect(page.locator(".activity-list")).toHaveCount(0);
+      await conversationViews
+        .getByRole("button", { name: /^Discussion/ })
+        .click();
+      await expectSelectedView(conversationViews, /^Discussion/, 3);
+      await expect(page.locator(".replies")).toBeVisible();
+
       await page
         .getByRole("button", { name: "Edit thread", exact: true })
         .click();
@@ -166,7 +245,12 @@ test(
       await expect(
         page.getByText("direction.png", { exact: true }),
       ).toBeVisible();
+      await conversationViews
+        .getByRole("button", { name: "Activity", exact: true })
+        .click();
+      await expectSelectedView(conversationViews, "Activity", 3);
       await page.getByRole("button", { name: "Reply", exact: true }).click();
+      await expectSelectedView(conversationViews, /^Discussion/, 3);
       await expect(page.locator(".reply img")).toBeVisible();
       await expect(
         page.getByText("Here is a first visual direction.", { exact: true }),
@@ -176,6 +260,7 @@ test(
         .click();
       await page.getByRole("button", { name: "Board", exact: true }).click();
       await expect(page.locator(".board-card")).toHaveCount(1);
+      await expectSelectedView(workViews, "Board", 2);
       await page
         .getByLabel(`Status of ${editedTitle}`)
         .selectOption({ label: "In progress" });
@@ -425,6 +510,12 @@ test(
       await page
         .getByRole("button", { name: "Configuration", exact: true })
         .click();
+      await expectSelectedView(
+        page.getByRole("group", { name: "Agent details view", exact: true }),
+        "Configuration",
+        3,
+      );
+
       await expect(
         page.getByText("Channel subscriptions", { exact: true }),
       ).toBeVisible();

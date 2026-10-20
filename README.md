@@ -448,3 +448,13 @@ file safety, literal input arguments, and display-supervisor shutdown. Normal
 `npm run test:codex` discovers the board/desktop tools without enabling a browser;
 running that smoke in the desktop worker environment also checks discovery of the
 Chrome DevTools server. Neither requests model inference.
+
+### Accessible view selection
+
+Work (Threads/Board), conversation (Discussion/Activity/Branches), and agent-detail
+view selectors use labelled groups of toggle buttons. The current view exposes
+`aria-pressed="true"`; the other buttons expose `false`. Use Tab/Shift+Tab to move
+between buttons and Enter/Space to activate a view. Existing visible focus rings
+remain in place. Browser regression checks verify exclusive selection, matching
+rendered content, keyboard activation, and the automatic return to Discussion
+after posting a reply. Unknown stored work-view values fall back to Threads.

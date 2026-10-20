@@ -511,7 +511,9 @@ function App() {
     [auth, setAuth] = useState("loading"),
     [page, setPage] = useState("work"),
     [channelId, setChannelId] = useState(null),
-    [view, setView] = useState(localStorage.getItem("tw_view") || "threads"),
+    [view, setView] = useState(() =>
+      localStorage.getItem("tw_view") === "board" ? "board" : "threads",
+    ),
     [threads, setThreads] = useState([]),
     [loading, setLoading] = useState(false),
     [query, setQuery] = useState(""),
@@ -1001,9 +1003,10 @@ function App() {
               </div>
             </section>
             <section className="work-toolbar">
-              <div className="view-switch" aria-label="Work view">
+              <div className="view-switch" role="group" aria-label="Work view">
                 <button
                   className={view === "threads" ? "selected" : ""}
+                  aria-pressed={view === "threads"}
                   onClick={() => {
                     setView("threads");
                     localStorage.setItem("tw_view", "threads");
@@ -1014,6 +1017,7 @@ function App() {
                 </button>
                 <button
                   className={view === "board" ? "selected" : ""}
+                  aria-pressed={view === "board"}
                   onClick={() => {
                     setView("board");
                     localStorage.setItem("tw_view", "board");
@@ -1961,21 +1965,28 @@ function ThreadDetail({ thread: t, data, act, notify, close, edit }) {
             <p className="muted">No description yet.</p>
           )}
         </div>
-        <div className="discussion-tabs">
+        <div
+          className="discussion-tabs"
+          role="group"
+          aria-label="Conversation view"
+        >
           <button
             className={tab === "discussion" ? "selected" : ""}
+            aria-pressed={tab === "discussion"}
             onClick={() => setTab("discussion")}
           >
             Discussion <span>{t.replies.length}</span>
           </button>
           <button
             className={tab === "activity" ? "selected" : ""}
+            aria-pressed={tab === "activity"}
             onClick={() => setTab("activity")}
           >
             Activity
           </button>
           <button
             className={tab === "branches" ? "selected" : ""}
+            aria-pressed={tab === "branches"}
             onClick={() => setTab("branches")}
           >
             Branches
@@ -3030,21 +3041,28 @@ function AgentDetail({
       onClose={close}
       wide
     >
-      <div className="agent-detail-tabs">
+      <div
+        className="agent-detail-tabs"
+        role="group"
+        aria-label="Agent details view"
+      >
         <button
           className={tab === "overview" ? "selected" : ""}
+          aria-pressed={tab === "overview"}
           onClick={() => setTab("overview")}
         >
           Overview
         </button>
         <button
           className={tab === "configuration" ? "selected" : ""}
+          aria-pressed={tab === "configuration"}
           onClick={() => setTab("configuration")}
         >
           Configuration
         </button>
         <button
           className={tab === "logs" ? "selected" : ""}
+          aria-pressed={tab === "logs"}
           onClick={() => setTab("logs")}
         >
           Runtime log
