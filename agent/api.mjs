@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { publicErrorSchema, httpError } from "../shared/errors.mjs";
 export function createApi({
   url = process.env.THREADWORK_URL || "http://localhost:3001",
   credential = process.env.AGENT_TOKEN,
@@ -41,6 +42,10 @@ export function createApi({
           const info = await response.json().catch(() => ({}));
           const error = new Error(info.error || `HTTP ${response.status}`);
           error.status = response.status;
+          const details = publicErrorSchema.safeParse(info.error_details);
+          error.publicError = details.success
+            ? details.data
+            : httpError(response.status, info.error);
           throw error;
         }
         return raw ? response : await response.json();

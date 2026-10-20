@@ -706,3 +706,40 @@ conversation after 2,000 characters. See [bounded-page measurements and
 reproduction](docs/benchmarks/thread-pages.md). In environments with a `noexec`
 `/tmp`, run tests with `TMPDIR` pointing to an executable temporary directory;
 several existing tests execute synthetic Git hooks and command fixtures there.
+
+
+### Public tool results and errors
+
+The existing 48 MCP tools advertise output schemas generated from reusable Zod
+contracts in `shared/results.mjs`. Successful JSON text remains the original
+result for existing clients. New clients can read
+`structuredContent.outcome = { ok: true, value: <result> }`. Image tools retain
+their image/content blocks and expose only path/MIME metadata in `value`, without
+duplicating image bytes. Tool names and input arguments are unchanged.
+
+Failures retain `isError: true` and readable text, with
+`structuredContent.outcome = { ok: false, error: { code, message, status,
+retryable, guidance, issues? } }`. HTTP JSON errors retain the legacy `error`
+string and add the same details as `error_details`. Validation issues contain
+field paths/codes and generic messages, excluding submitted values. HTTP status
+is null for local/network failures. `retryable: null` means unknown: a timeout or
+server failure can occur after a mutation committed; inspect current state before
+retrying. This does not change existing automatic retries or permissions.
+
+Public HTTP-backed responses use the same strict result models as MCP. Unexpected
+fields fail closed with `INVALID_RESULT`; adding a public field requires updating
+the contract. These models exclude unlisted internal columns, rather than
+scanning user-authored text for secrets. Unexpected server/local failures are
+masked, without stack traces or request values. Existing authorization remains
+server-owned.
+
+The installed SDK 1.32.1 validates structured error content against advertised
+output schemas as well as successes. Both outcomes therefore share one schema.
+The adapter uses public SDK protocol handlers for consistent argument errors;
+`zod-to-json-schema` generates schemas rather than maintaining separate JSON
+copies. Real stdio transport tests cover read/mutation/text/image results,
+validation, permission/conflict errors, unknown tools, file failures, transient
+HTTP/network/timeout failures and rejection of unexpected internal columns.
+The serial API/protocol suite and all 16 browser scenarios were run for this
+change; Compose execution is unavailable in this environment. Result-validation
+CPU overhead has not been benchmarked at scale.

@@ -1,3 +1,5 @@
+import { publicHttpResult } from "../shared/results.mjs";
+import { httpError } from "../shared/errors.mjs";
 import { createRefreshJournal } from "./refresh.mjs";
 import { installActivity } from "./activity.mjs";
 import { installWorkQueue } from "./work-queue.mjs";
@@ -93,6 +95,28 @@ export function createApp({
   bootstrap(db, env);
   const app = express();
   app.disable("x-powered-by");
+  app.use((req, res, next) => {
+    const json = res.json.bind(res);
+    res.json = (value) => {
+      if (res.statusCode >= 400 && typeof value?.error === "string") {
+        const { validation_issues, ...body } = value;
+        return json({
+          ...body,
+          error_details: httpError(
+            res.statusCode,
+            value.error,
+            validation_issues,
+          ),
+        });
+      }
+      return json(
+        res.statusCode < 400
+          ? publicHttpResult(req.method, req.path, value)
+          : value,
+      );
+    };
+    next();
+  });
   const streams = new Set();
   const refreshJournal = createRefreshJournal(db);
   const broadcast = (hint) => {
@@ -1333,6 +1357,7 @@ export function createApp({
     if (res.headersSent) return next(error);
     if (error instanceof z.ZodError)
       return res.status(400).json({
+        validation_issues: error.issues,
         error: error.issues
           .map((i) => `${i.path.join(".")}: ${i.message}`)
           .join("; "),

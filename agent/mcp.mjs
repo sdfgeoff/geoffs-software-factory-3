@@ -1,4 +1,6 @@
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { ResultMcpServer } from "./mcp-results.mjs";
+import { publicResult, toolOutput } from "../shared/results.mjs";
+import { errorResult } from "../shared/errors.mjs";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import { readFile, writeFile, mkdir, realpath } from "node:fs/promises";
@@ -24,23 +26,24 @@ async function workspacePath(file, write = false) {
     throw new Error("Path must be inside your workspace");
   return resolved;
 }
-const server = new McpServer({ name: "threadwork", version: "0.1.0" });
+const server = new ResultMcpServer({ name: "threadwork", version: "0.1.0" });
 const id = z.number().int().positive();
-const result = (value) => ({
-  content: [{ type: "text", text: JSON.stringify(value, null, 2) }],
-});
+const result = (name, value) => {
+  const output = publicResult(name, value);
+  return {
+    content: [{ type: "text", text: JSON.stringify(output, null, 2) }],
+    structuredContent: { outcome: { ok: true, value: output } },
+  };
+};
 function tool(name, description, schema, fn) {
   server.registerTool(
     name,
-    { description, inputSchema: schema },
+    { description, inputSchema: schema, outputSchema: toolOutput(name) },
     async (args) => {
       try {
-        return result(await fn(args));
+        return result(name, await fn(args));
       } catch (error) {
-        return {
-          isError: true,
-          content: [{ type: "text", text: error.message }],
-        };
+        return errorResult(error);
       }
     },
   );
@@ -461,6 +464,7 @@ server.registerTool(
     description:
       "Inspect an image attached to a reply (PNG, JPEG, GIF or WebP).",
     inputSchema: { attachment_id: z.string().uuid() },
+    outputSchema: toolOutput("view_image_attachment"),
   },
   async ({ attachment_id }) => {
     try {
@@ -475,6 +479,12 @@ server.registerTool(
           "This attachment is not a supported image (PNG, JPEG, GIF or WebP)",
         );
       return {
+        structuredContent: {
+          outcome: {
+            ok: true,
+            value: publicResult("view_image_attachment", { mimeType: mime }),
+          },
+        },
         content: [
           {
             type: "image",
@@ -484,10 +494,7 @@ server.registerTool(
         ],
       };
     } catch (error) {
-      return {
-        isError: true,
-        content: [{ type: "text", text: error.message }],
-      };
+      return errorResult(error);
     }
   },
 );
@@ -533,21 +540,25 @@ server.registerTool(
     description:
       "Capture and inspect your entire private virtual desktop, including non-browser applications. Returns a PNG image and saved workspace path. Optional path must be a new .png file inside your workspace. Does not publish anything; upload_attachment and post_reply can share it explicitly.",
     inputSchema: { path: z.string().optional() },
+    outputSchema: toolOutput("desktop_screenshot"),
   },
   async ({ path }) => {
     try {
       const capture = await screenshotDesktop(workspace, path);
       return {
+        structuredContent: {
+          outcome: {
+            ok: true,
+            value: publicResult("desktop_screenshot", { path: capture.path }),
+          },
+        },
         content: [
           { type: "text", text: JSON.stringify({ path: capture.path }) },
           { type: "image", mimeType: "image/png", data: capture.data },
         ],
       };
     } catch (error) {
-      return {
-        isError: true,
-        content: [{ type: "text", text: error.message }],
-      };
+      return errorResult(error);
     }
   },
 );
