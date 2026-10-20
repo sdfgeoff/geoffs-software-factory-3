@@ -3,7 +3,8 @@ import { installActivity } from "./activity.mjs";
 import { installWorkQueue } from "./work-queue.mjs";
 import { installOrchestration, gitIdentity } from "./orchestration.mjs";
 import express from "express";
-import { searchPlatform } from "./search.mjs";
+import { listThreads, threadQuery } from "./thread-list.mjs";
+import { SearchPool } from "./search-pool.mjs";
 import { parseSchedule, deliverSchedules } from "./schedules.mjs";
 import multer from "multer";
 import bcrypt from "bcryptjs";
@@ -351,8 +352,29 @@ export function createApp({
     mutate,
     fail,
   });
-  app.get("/api/search", (req, res) =>
-    res.json(searchPlatform(db, req.user, req.query)),
+  const searchPool = new SearchPool(join(dataDir, "threadwork.sqlite"));
+  async function runSearch(req, res, next, kind, input) {
+    const controller = new AbortController();
+    const cancel = () => {
+      if (!res.writableEnded) controller.abort();
+    };
+    res.on("close", cancel);
+    try {
+      const result = await searchPool.run(
+        kind,
+        input,
+        { id: req.user.id, admin: req.user.admin },
+        controller.signal,
+      );
+      if (!res.destroyed) res.json(result);
+    } catch (error) {
+      if (!controller.signal.aborted) next(error);
+    } finally {
+      res.off("close", cancel);
+    }
+  }
+  app.get("/api/search", (req, res, next) =>
+    runSearch(req, res, next, "global", req.query),
   );
   app.post("/api/notification-schedules", (req, res) => {
     const input = z
@@ -528,118 +550,9 @@ export function createApp({
       return { subscribed };
     }),
   );
-  const threadQuery = `SELECT t.*,c.name AS channel_name,u.name AS author_name,u.username AS author_username,u.kind AS author_kind,a.name AS assignee_name,a.kind AS assignee_kind,s.name AS status_name,s.color AS status_color,(SELECT COUNT(*) FROM replies r WHERE r.thread_id=t.id) AS reply_count FROM threads t JOIN channels c ON c.id=t.channel_id JOIN users u ON u.id=t.created_by LEFT JOIN users a ON a.id=t.assignee_id JOIN statuses s ON s.id=t.status_id`;
-  app.get("/api/threads", (req, res) => {
-    const clauses = [];
-    const args = [];
-    if (req.query.ids !== undefined) {
-      const ids = [
-        ...new Set(
-          z
-            .array(positive)
-            .min(1)
-            .max(200)
-            .parse(String(req.query.ids).split(",")),
-        ),
-      ];
-      clauses.push(`t.id IN (${ids.map(() => "?").join(",")})`);
-      args.push(...ids);
-    }
-    if (req.query.channel) {
-      clauses.push("t.channel_id=?");
-      args.push(positive.parse(req.query.channel));
-    }
-    if (req.query.assignee) {
-      clauses.push("t.assignee_id=?");
-      args.push(positive.parse(req.query.assignee));
-    }
-    if (req.query.q) {
-      clauses.push(
-        "(t.title LIKE ? ESCAPE '\\' OR t.body LIKE ? ESCAPE '\\' OR EXISTS(SELECT 1 FROM replies r WHERE r.thread_id=t.id AND r.body LIKE ? ESCAPE '\\'))",
-      );
-      const q = `%${String(req.query.q)
-        .slice(0, 200)
-        .replace(/[\\%_]/g, "\\$&")}%`;
-      args.push(q, q, q);
-    }
-    if (req.query.paged === "1") {
-      if (req.query.status) {
-        clauses.push("t.status_id=?");
-        args.push(positive.parse(req.query.status));
-      }
-      const where = clauses.length ? " WHERE " + clauses.join(" AND ") : "";
-      const counts = db
-        .prepare(
-          "SELECT t.status_id,COUNT(*) AS count FROM threads t" +
-            where +
-            " GROUP BY t.status_id",
-        )
-        .all(...args);
-      const total = counts.reduce((n, row) => n + row.count, 0);
-      const limit = z.coerce
-        .number()
-        .int()
-        .min(1)
-        .max(100)
-        .default(50)
-        .parse(req.query.limit);
-      const direction = req.query.after ? "after" : "before";
-      const cursor = req.query.after || req.query.before;
-      const pageClauses = [...clauses],
-        pageArgs = [...args];
-      if (cursor) {
-        const [stamp, id] = z
-          .tuple([z.string().min(1).max(40), positive])
-          .parse(String(cursor).split("|"));
-        pageClauses.push(
-          `(t.created_at,t.id) ${direction === "after" ? ">" : "<"} (?,?)`,
-        );
-        pageArgs.push(stamp, id);
-      }
-      const pageWhere = pageClauses.length
-        ? " WHERE " + pageClauses.join(" AND ")
-        : "";
-      let items = db
-        .prepare(
-          threadQuery +
-            pageWhere +
-            ` ORDER BY t.created_at ${direction === "after" ? "ASC" : "DESC"},t.id ${direction === "after" ? "ASC" : "DESC"} LIMIT ?`,
-        )
-        .all(...pageArgs, limit);
-      if (direction === "after") items.reverse();
-      const boundary = (item, comparison) =>
-        item &&
-        !!db
-          .prepare(
-            "SELECT 1 FROM threads t" +
-              where +
-              (where ? " AND " : " WHERE ") +
-              `(t.created_at,t.id) ${comparison} (?,?) LIMIT 1`,
-          )
-          .get(...args, item.created_at, item.id);
-      const encode = (item) => `${item.created_at}|${item.id}`;
-      const first = items[0],
-        last = items.at(-1);
-      return res.json({
-        items,
-        total,
-        statusCounts: Object.fromEntries(
-          counts.map((r) => [r.status_id, r.count]),
-        ),
-        older: boundary(last, "<") ? encode(last) : null,
-        newer: boundary(first, ">") ? encode(first) : null,
-      });
-    }
-    const offset = Math.max(0, Math.min(100000, Number(req.query.offset) || 0));
-    res.json(
-      db
-        .prepare(
-          threadQuery +
-            (clauses.length ? " WHERE " + clauses.join(" AND ") : "") +
-            " ORDER BY t.created_at DESC,t.id DESC LIMIT 500 OFFSET ?",
-        )
-        .all(...args, offset),
-    );
+  app.get("/api/threads", (req, res, next) => {
+    if (req.query.q) return runSearch(req, res, next, "threads", req.query);
+    res.json(listThreads(db, req.query));
   });
   app.get("/api/threads/:id", (req, res) => {
     const t = getThread(req.params.id);
@@ -1383,6 +1296,7 @@ export function createApp({
     closed = true;
     clearInterval(scheduleTimer);
     activity.shutdown();
+    searchPool.close();
     for (const response of streams) response.end();
     db.close();
   };

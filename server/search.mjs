@@ -1,3 +1,4 @@
+import { replyBodyCandidates } from "./search-index.mjs";
 import { z } from "zod";
 
 // Search published board content and the caller's private reminders only. Selecting
@@ -11,10 +12,19 @@ export function searchPlatform(db, user, input) {
     })
     .parse(input);
   if (!q) return { results: [], has_more: false };
+  const candidateIds = replyBodyCandidates(db, q, limit + offset + 1);
+  const candidates = JSON.stringify(candidateIds);
   const rows = db
     .prepare(
       `
-    WITH content AS (
+    WITH reply_candidates AS (
+      SELECT value AS id FROM json_each($candidates)
+      UNION
+      SELECT r.id FROM replies r WHERE r.thread_id IN (
+        SELECT id FROM threads WHERE instr(lower(title),lower($q))>0
+        UNION SELECT id FROM threads WHERE lower($q)='tw-' || id
+      )
+    ), content AS (
       SELECT 'channel' AS kind, c.id, c.name AS title, c.description AS body,
         c.id AS channel_id, c.name AS channel_name, NULL AS thread_id,
         NULL AS reply_id, c.created_at, CASE WHEN c.archived THEN 'Archived channel' ELSE 'Channel' END AS label
@@ -24,7 +34,7 @@ export function searchPlatform(db, user, input) {
         FROM threads t JOIN channels c ON c.id=t.channel_id
       UNION ALL
       SELECT 'reply', r.id, t.title, r.body, c.id, c.name, t.id, r.id, r.created_at, 'Reply · TW-' || t.id
-        FROM replies r JOIN threads t ON t.id=r.thread_id JOIN channels c ON c.id=t.channel_id
+        FROM reply_candidates rc JOIN replies r ON r.id=rc.id JOIN threads t ON t.id=r.thread_id JOIN channels c ON c.id=t.channel_id
       UNION ALL
       SELECT 'attachment', a.id, a.name, t.title, c.id, c.name, t.id, r.id, a.created_at, 'Attachment · TW-' || t.id
         FROM attachments a LEFT JOIN replies r ON r.id=a.reply_id
@@ -60,6 +70,7 @@ export function searchPlatform(db, user, input) {
   `,
     )
     .all({
+      candidates,
       user: user.id,
       admin: user.admin ? 1 : 0,
       q,

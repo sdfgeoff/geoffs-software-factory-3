@@ -426,11 +426,13 @@ function GlobalSearch({ onClose, onChoose, refreshKey, query, setQuery }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const generation = useRef(0);
+  const activeRequest = useRef(null);
   const fetching = useRef(false);
   const normalized = query.trim();
   useEffect(() => {
     const version = ++generation.current;
-    let controller = new AbortController();
+    const controller = new AbortController();
+    activeRequest.current = controller;
     setResults([]);
     setMore(false);
     setError("");
@@ -458,7 +460,7 @@ function GlobalSearch({ onClose, onChoose, refreshKey, query, setQuery }) {
     }, 220);
     return () => {
       clearTimeout(timer);
-      controller.abort();
+      activeRequest.current?.abort();
       generation.current++;
     };
   }, [normalized, refreshKey]);
@@ -466,18 +468,22 @@ function GlobalSearch({ onClose, onChoose, refreshKey, query, setQuery }) {
     if (fetching.current) return;
     fetching.current = true;
     const version = generation.current;
+    const controller = new AbortController();
+    activeRequest.current = controller;
     setLoading(true);
     setError("");
     try {
       const response = await api(
         "/search?" +
           new URLSearchParams({ q: normalized, offset: results.length }),
+        { signal: controller.signal },
       );
       if (version !== generation.current) return;
       setResults((previous) => [...previous, ...response.results]);
       setMore(response.has_more);
     } catch (e) {
-      if (version === generation.current) setError(e.message);
+      if (version === generation.current && e.name !== "AbortError")
+        setError(e.message);
     } finally {
       if (version === generation.current) {
         setLoading(false);
@@ -912,11 +918,12 @@ function App() {
   useEffect(() => {
     if (auth !== "signedIn" || !listVisible) return;
     let stale = false;
+    const controller = new AbortController();
     fullListInvalid.current = false;
     listRequested.current = listContext;
     const versions = new Map(pendingThreads.current);
     setLoading(true);
-    api("/threads?" + listParams())
+    api("/threads?" + listParams(), { signal: controller.signal })
       .then((result) => {
         if (!stale) {
           setThreads(result.items);
@@ -942,6 +949,7 @@ function App() {
       });
     return () => {
       stale = true;
+      controller.abort();
     };
   }, [auth, channelId, search, assignee, statusFilter, windowKey, fullListKey]);
   const loadedContext = useRef(null);
@@ -964,13 +972,14 @@ function App() {
     )
       return;
     let stale = false;
+    const controller = new AbortController();
     const ids = [...pendingThreads.current.keys()].slice(0, 200);
     const versions = new Map(
       ids.map((id) => [id, pendingThreads.current.get(id)]),
     );
     // Reconcile the bounded window and totals together. A changed ID may have
     // entered or left this page; appending deltas would grow it or hide an older row.
-    api("/threads?" + listParams())
+    api("/threads?" + listParams(), { signal: controller.signal })
       .then((result) => {
         if (stale) return;
         for (const id of ids) {
@@ -982,10 +991,11 @@ function App() {
         if (pendingThreads.current.size) setListDeltaKey((k) => k + 1);
       })
       .catch((e) => {
-        if (!stale) notify(e.message, true);
+        if (!stale && e.name !== "AbortError") notify(e.message, true);
       });
     return () => {
       stale = true;
+      controller.abort();
     };
   }, [listVisible, loading, listDeltaKey, listContext]);
   useEffect(() => {
