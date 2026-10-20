@@ -1,0 +1,46 @@
+{
+  "threads": 10000,
+  "repliesPerThread": 300,
+  "events": 3000000,
+  "notifications": 3000000,
+  "viewport": "1440x1000",
+  "budget": {
+    "readyMs": 2000,
+    "maxLongTaskMs": 250,
+    "nodes": 5000,
+    "heapMiB": 100
+  },
+  "metrics": [
+    {
+      "name": "all-work",
+      "visibleMs": 450.23851099999956,
+      "readyMs": 459.87444999999934,
+      "nodes": 1340,
+      "maxLongTaskMs": 0,
+      "heapMiB": 4.7213897705078125,
+      "listRequests": [
+        "http://127.0.0.1:41057/api/threads?paged=1&limit=50"
+      ]
+    },
+    {
+      "name": "channel",
+      "visibleMs": 149.95426700000098,
+      "readyMs": 153.0165109999998,
+      "nodes": 1138,
+      "maxLongTaskMs": 55,
+      "heapMiB": 6.876346588134766,
+      "listRequests": [
+        "http://127.0.0.1:41057/api/threads?paged=1&limit=50&channel=1"
+      ]
+    },
+    {
+      "name": "board",
+      "visibleMs": 94.54377599999862,
+      "readyMs": 97.34704799999963,
+      "nodes": 1350,
+      "maxLongTaskMs": 0,
+      "heapMiB": 14.16293716430664,
+      "listRequests": []
+    }
+  ]
+}

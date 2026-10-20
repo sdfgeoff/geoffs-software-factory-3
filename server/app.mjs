@@ -1,3 +1,4 @@
+import { createRefreshJournal } from "./refresh.mjs";
 import { installActivity } from "./activity.mjs";
 import { installWorkQueue } from "./work-queue.mjs";
 import { installOrchestration, gitIdentity } from "./orchestration.mjs";
@@ -93,9 +94,13 @@ export function createApp({
   const app = express();
   app.disable("x-powered-by");
   const streams = new Set();
-  const broadcast = () => {
+  const refreshJournal = createRefreshJournal(db);
+  const broadcast = (hint) => {
+    const version = refreshJournal.publish(hint);
     for (const response of streams)
-      response.write("event: refresh\ndata: {}\n\n");
+      response.write(
+        `event: refresh\ndata: ${JSON.stringify({ version })}\n\n`,
+      );
   };
   app.use((req, res, next) => {
     res.setHeader("X-Content-Type-Options", "nosniff");
@@ -283,12 +288,16 @@ export function createApp({
     if (key && !/^[a-zA-Z0-9:_-]{1,150}$/.test(key))
       fail(400, "Invalid idempotency key");
     const cacheKey = key ? `${req.method}:${req.path}:${key}` : null;
+    let replay = false;
     const result = transaction(db, () => {
       if (cacheKey) {
         const cached = db
           .prepare("SELECT response FROM mutations WHERE user_id=? AND key=?")
           .get(req.user.id, cacheKey);
-        if (cached) return JSON.parse(cached.response);
+        if (cached) {
+          replay = true;
+          return JSON.parse(cached.response);
+        }
       }
       const value = fn();
       // Credentials are returned once and stored only as hashes, never in retry caches.
@@ -305,7 +314,19 @@ export function createApp({
         );
       return value;
     });
-    broadcast();
+    if (!replay) {
+      const target = req.path.match(/\/threads\/(\d+)/)?.[1];
+      const privateChange = /\/(inbox|notification-schedules)(\/|$)/.test(
+        req.path,
+      );
+      broadcast(
+        target
+          ? { full: false, threadIds: [Number(target)] }
+          : privateChange
+            ? { full: false }
+            : undefined,
+      );
+    }
     res.json(result);
   }
   const workQueue = installWorkQueue({
@@ -396,6 +417,7 @@ export function createApp({
   app.get("/api/me", (req, res) => res.json(req.user));
   app.get("/api/bootstrap", (req, res) =>
     res.json({
+      sync_revision: refreshJournal.version(),
       public_origin: publicOrigin,
       user: req.user,
       users: db
@@ -420,6 +442,9 @@ export function createApp({
         )
         .get(req.user.id).n,
     }),
+  );
+  app.get("/api/sync", (req, res) =>
+    res.json(refreshJournal.changes(req.query.since)),
   );
   app.get("/api/events", (req, res) => {
     res.setHeader("Content-Type", "text/event-stream");
@@ -507,6 +532,19 @@ export function createApp({
   app.get("/api/threads", (req, res) => {
     const clauses = [];
     const args = [];
+    if (req.query.ids !== undefined) {
+      const ids = [
+        ...new Set(
+          z
+            .array(positive)
+            .min(1)
+            .max(200)
+            .parse(String(req.query.ids).split(",")),
+        ),
+      ];
+      clauses.push(`t.id IN (${ids.map(() => "?").join(",")})`);
+      args.push(...ids);
+    }
     if (req.query.channel) {
       clauses.push("t.channel_id=?");
       args.push(positive.parse(req.query.channel));
@@ -1220,7 +1258,7 @@ export function createApp({
       a.auth_status !== input.auth_status ||
       input.login_code
     )
-      broadcast();
+      broadcast({ full: false });
     const config = db
       .prepare(
         "SELECT a.*,u.name,u.username FROM agents a JOIN users u ON u.id=a.user_id WHERE user_id=?",

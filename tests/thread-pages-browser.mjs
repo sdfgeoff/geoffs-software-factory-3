@@ -23,6 +23,9 @@ test(
     SELECT 1,printf('Scale conversation %05d',i),'Build update with **Markdown**.\n\nChecked the latest changes and shared results with the team.',i%5+1,1,printf('2026-01-%02dT00:00:00.000Z',i%28+1),'2026-01-01' FROM n;
     WITH RECURSIVE n(i) AS (VALUES(1) UNION ALL SELECT i+1 FROM n WHERE i<${replies})
     INSERT INTO replies(thread_id,author_id,body,created_at) SELECT t.id,1,'Synthetic reply','2026-01-01' FROM threads t CROSS JOIN n;
+    INSERT INTO events(id,type,actor_id,thread_id,channel_id,payload,created_at)
+      SELECT id,'reply.created',1,thread_id,1,'{}',created_at FROM replies;
+    INSERT INTO notifications(event_id,user_id) SELECT id,1 FROM events;
     COMMIT;`);
     const server = app.listen(0, "127.0.0.1");
     await new Promise((r) => server.once("listening", r));
@@ -60,6 +63,7 @@ test(
             requests.push(r.url());
         };
         page.on("request", collect);
+        await page.evaluate(() => window.pageLongTasks?.splice(0));
         const start = performance.now();
         await action();
         await page.locator(selector).first().waitFor({ state: "visible" });
@@ -173,7 +177,7 @@ test(
           .then((a) => a.reduce((n, x) => n + Number(x), 0)),
         10000,
       );
-      await page.goto(url + "/?channel=1&thread=1");
+      await page.goto(url + "/?channel=1&thread=1&view=threads");
       await expect(page.locator(".conversation-main")).toContainText(
         "Scale conversation 00001",
       );
@@ -188,6 +192,8 @@ test(
           {
             threads: 10000,
             repliesPerThread: replies,
+            events: 10000 * replies,
+            notifications: 10000 * replies,
             viewport: "1440x1000",
             budget: {
               readyMs: 2000,

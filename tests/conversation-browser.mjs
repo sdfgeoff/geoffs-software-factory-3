@@ -225,6 +225,7 @@ for (const width of [1440, 390])
         await page
           .getByRole("button", { name: "Close thread", exact: true })
           .click();
+        await page.getByRole("button", { name: "Older conversations", exact: true }).click();
         await page
           .locator(".channel-thread-link")
           .filter({ hasText: thread.title })

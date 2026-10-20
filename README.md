@@ -670,3 +670,35 @@ batch increased from 6.84ms to 150.25ms; hot-thread inserts rose from 5.61ms to
 6. Activity APIs are admin-only. Workers can upload only as their own authenticated identity under the current worker lease. The collector excludes account/login messages, user prompt items, raw reasoning blocks, and encrypted reasoning content. Known environment credentials and common secret patterns are redacted before Docker output or spooling, with independent server-side redaction. Tool output can contain arbitrary project content, so these are private operational records, not public conversation posts. No runtime response is automatically posted to a ticket.
 
 Verification includes fixture-driven worker upload and restart tests, secret and reasoning exclusion, upload deduplication, lease/admin permission checks, retention and cursor pagination, tool-versus-wake attribution, and browser tests for live inspection and ticket drill-down. Automated tests use isolated fake runtimes; the installed CLI smoke test does not run inference or use an existing host login.
+
+### Scoped browser refreshes
+
+The browser coalesces write acknowledgements, SSE hints and the 20-second fallback
+into a single revision check (`GET /api/sync?since=...`). An unchanged workspace
+does not reload thread pages. Public conversation changes fetch summaries for at
+most 200 affected IDs, retaining channel/text/assignee filters and ordering; only
+an affected open conversation reloads its detail. Updates to a hidden originating
+list wait until return. Existing team presence and agent activity/runtime viewers
+retain their polling behavior. Drafts remain session-only.
+
+Revision hints contain no event payloads or private reminder text. The bounded,
+in-memory journal retains 256 invalidations; a restart, expired cursor, broad
+metadata change or excess changed IDs requests authoritative recovery. This can
+reload the list once it is visible. These hints do not replace durable worker
+notifications or their acceptance/read state. Initial loading and rendering of a
+large workspace remain separate work (#16).
+
+The refresh regression exercises pagination, idle fallback, local/SSE coalescing,
+hidden origins, unrelated updates, a delayed response race and missed-stream
+recovery. API tests cover journal gaps/restarts, authentication, filter matching,
+failed mutations, idempotent retries and payload exclusion. Scale measurement
+methodology and observed limits are recorded in
+[`docs/benchmarks/scoped-refresh.md`](docs/benchmarks/scoped-refresh.md).
+
+Conversation lists and channel history use 50-conversation pages with older,
+newer and latest controls. Counts include all matching conversations; Board
+columns show matching totals across pages. Channel previews link to the full
+conversation after 2,000 characters. See [bounded-page measurements and
+reproduction](docs/benchmarks/thread-pages.md). In environments with a `noexec`
+`/tmp`, run tests with `TMPDIR` pointing to an executable temporary directory;
+several existing tests execute synthetic Git hooks and command fixtures there.
