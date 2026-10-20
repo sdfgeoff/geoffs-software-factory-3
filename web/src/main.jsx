@@ -2315,6 +2315,12 @@ function App() {
           act={act}
           notify={notify}
           openThread={openThread}
+          onThreadCreated={(thread) => {
+            changeWindow({});
+            setModal(null);
+            openThread(thread.id);
+            notify("Message sent");
+          }}
         />
       )}
       {toast && (
@@ -3591,6 +3597,7 @@ function ModalRouter({
   act,
   notify,
   openThread,
+  onThreadCreated,
 }) {
   const [busy, setBusy] = useState(false),
     [error, setError] = useState("");
@@ -3763,12 +3770,7 @@ function ModalRouter({
             users={data.users}
             act={act}
             notify={notify}
-            afterPost={(r) => {
-              close();
-              openThread(r.id);
-              changeWindow({});
-              notify("Message sent");
-            }}
+            afterPost={onThreadCreated}
           />
         </Dialog>
       );

@@ -22,8 +22,8 @@ isolated temporary SQLite database. No board data or credentials are used.
 The local regression budget proposed in #16 is: first ready under 2 seconds,
 maximum observed long task under 250 ms, fewer than 5,000 DOM elements, and less
 than 100 MiB used JavaScript heap. These are explicit review targets and executable
-assertions, not a production SLA. Exact-revision approval includes accepting these
-budgets or requesting adjustment.
+assertions, not a production SLA. Sage accepted these local synthetic budgets in the review of `206021f`
+(ticket #16, reply 98).
 
 The raw single-run results are in `thread-pages.json`. The measured implementation is
 `0766b94`; the subsequent integration of bootstrap response-ordering fix
@@ -55,3 +55,13 @@ Board counts, opening the oldest conversation directly, expanding a long preview
 tied-timestamp pages, preserve status/channel/assignee/search filters and totals,
 and ensure concurrent inserts do not duplicate older-page entries. Existing
 mobile/desktop reading-position and live-reply tests remain part of the suite.
+
+## Review regression
+
+The Board creation dialog now delegates its complete success flow to App through
+an explicit `onThreadCreated` callback. A regression starts on an older Board
+page, saves through the dialog, checks the success message and absence of caught
+or uncaught JavaScript exceptions, closes the saved conversation and verifies
+that the latest 50-item page contains it with an accurate total. The regression
+fails on `206021f` and passes with the fix. This callback-only follow-up leaves
+the measured query/render paths unchanged; the volume measurement was not rerun.
