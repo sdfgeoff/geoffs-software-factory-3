@@ -419,6 +419,31 @@ test("branch submissions and revision claims release capacity and reject stale p
   assert.equal(ticketState.assignee_id, spark);
   assert.equal((await api(`/threads/${t.id}/claim`, {}, "sage")).status, 409);
   assert.equal((await api(`/threads/${t.id}/claim`, {})).status, 200);
+  await api(`/branches/${b.id}/submit-review`, { commit: sha });
+  await api(`/branches/${b.id}/claim-review`, { commit: sha }, "sage");
+  assert.equal(
+    (
+      await api(
+        `/branches/${b.id}/reviews`,
+        { commit: sha, decision: "approved" },
+        "sage",
+      )
+    ).status,
+    200,
+  );
+  await prefs(true, false);
+  const waiting = await ticket("Next job after merge");
+  const beforeMerge = count(spark, "work.ready");
+  const merged = await api(`/branches/${b.id}/merge`, {});
+  assert.equal(merged.status, 200);
+  assert.equal(merged.data.state, "merged");
+  assert.ok(
+    count(spark, "work.ready") > beforeMerge,
+    "merge refreshes owner wakes despite prior submission delivery",
+  );
+  assert.ok(
+    (await api("/work-queue")).data.work.some((x) => x.id === waiting.id),
+  );
 });
 test("v4 database migration creates queue tables while preserving repositories, reviews, credentials, and discussions", async () => {
   const { openDatabase, bootstrap, hash, now } =

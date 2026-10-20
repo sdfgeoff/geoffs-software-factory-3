@@ -223,6 +223,7 @@ async function workerHarness(t, options = {}) {
       CODEX_BIN: resolve("tests/fixtures/fake-codex.mjs"),
       FAKE_CODEX_LOG: logFile,
       POLL_INTERVAL_MS: "50",
+      IDLE_QUEUE_CHECK_MS: String(options.queueInterval || 60000),
       ...(options.early ? { FAKE_CODEX_COMPLETE_EARLY: "1" } : {}),
       ...(options.noAuth ? { FAKE_CODEX_NO_AUTH: "1" } : {}),
       ...(options.injectFail
@@ -277,7 +278,7 @@ async function workerHarness(t, options = {}) {
         r.method === (options.noAuth ? "account/read" : "thread/inject_items"),
     ),
   );
-  return { app, p, call, records, disk, output: () => output };
+  return { app, p, call, records, disk, url, output: () => output };
 }
 
 test(
@@ -411,5 +412,113 @@ test(
       1,
     );
     assert.equal(h.disk().sessionId, "one-persistent-session");
+  },
+);
+
+test(
+  "idle reconciliation continues a consumed batch, respects claims/preferences and cools down",
+  { timeout: 20000 },
+  async (t) => {
+    const h = await workerHarness(t, { early: true, queueInterval: 1000 });
+    await h.call("/admin/agents/2", "PATCH", { desired: "paused" });
+    await wait(
+      async () => (await h.call("/admin/agents/2")).state === "paused",
+    );
+    const jobs = [];
+    for (let i = 0; i < 3; i++)
+      jobs.push(
+        await h.call("/threads", "POST", {
+          channel_id: 1,
+          title: `Batch job ${i}`,
+          status_id: 2,
+        }),
+      );
+    await h.call("/admin/agents/2/work-preferences", "PUT", {
+      notify_ready_work: true,
+      notify_ready_reviews: false,
+    });
+    // Simulate all original/submission wakes having been accepted during earlier turns.
+    const consume = () =>
+      h.app.locals.db
+        .prepare(
+          "UPDATE notifications SET accepted_at=datetime('now') WHERE user_id=2",
+        )
+        .run();
+    consume();
+    const starts = () =>
+      h
+        .records()
+        .filter(
+          (r) =>
+            r.method === "turn/start" &&
+            r.params.input[0].text.includes("Idle queue reconciliation"),
+        );
+    const asAgent = async (path, body) => {
+      const r = await fetch(h.url + "/api" + path, {
+        method: "POST",
+        headers: {
+          authorization: "Bearer worker-token",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify(body),
+      });
+      assert.equal(r.status, 200, await r.clone().text());
+      return r.json();
+    };
+    await h.call("/admin/agents/2", "PATCH", { desired: "running" });
+    for (const job of jobs) {
+      const before = starts().length;
+      await wait(() => starts().length > before);
+      assert.ok(h.disk().nextQueueCheckAt > Date.now() - 1000);
+      await asAgent(`/threads/${job.id}/claim`, {});
+      const busy = starts().length;
+      await new Promise((r) => setTimeout(r, 1200));
+      assert.equal(
+        starts().length,
+        busy,
+        "an active claim prevents idle wakes",
+      );
+      await asAgent(`/threads/${job.id}/submit-work`, {
+        summary: "Fixture completed without a human wake",
+      });
+      consume();
+    }
+    // No eligible jobs: ending a queue turn must not create an endless turn loop.
+    await new Promise((r) => setTimeout(r, 1300));
+    const drained = starts().length;
+    await new Promise((r) => setTimeout(r, 1300));
+    assert.equal(starts().length, drained);
+    const extra = await h.call("/threads", "POST", {
+      channel_id: 1,
+      title: "Deferred job",
+      status_id: 2,
+    });
+    consume();
+    await wait(() => starts().length > drained);
+    const deferred = starts().length;
+    await new Promise((r) => setTimeout(r, 350));
+    assert.equal(
+      starts().length,
+      deferred,
+      "a declined job cannot hot-loop turns",
+    );
+    await h.call("/admin/agents/2/work-preferences", "PUT", {
+      notify_ready_work: false,
+      notify_ready_reviews: false,
+    });
+    consume();
+    const disabled = starts().length;
+    await new Promise((r) => setTimeout(r, 1200));
+    assert.equal(starts().length, disabled, "opt-out prevents idle work turns");
+    assert.equal(
+      h.app.locals.db
+        .prepare("SELECT status_id FROM threads WHERE id=?")
+        .get(extra.id).status_id,
+      2,
+    );
+    assert.equal(
+      h.records().filter((r) => r.method === "thread/start").length,
+      1,
+    );
   },
 );

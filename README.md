@@ -755,3 +755,32 @@ Shared HTTP/MCP request validation and the complete existing tool mapping are
 listed in [Board request contracts](docs/request-contracts.md). The document
 also records transport coercion, local adapters, preserved legacy list behavior,
 and intentional MCP input-schema corrections.
+
+### Continuing queued work after completion
+
+An explicit branch merge resets the owner's queue-wake deduplication and emits
+fresh notifications for eligible opted-in work. This covers the next job even if
+its earlier invitation was consumed while the worker was busy with review.
+
+As a fallback, an authenticated, running worker with no active runtime turn or
+pending/recovery notification batch checks its existing `work_queue` once per
+minute. Only work/review categories enabled in that worker's preferences can
+start a queue-check turn, and any active work/review claim suppresses that turn.
+The agent re-reads the queue and claims atomically; another worker winning the
+race is harmless. Empty queues do not start turns. Paused, signed-out and
+opted-out workers do not start queue-check turns.
+
+`IDLE_QUEUE_CHECK_MS` controls this interval (default 60000, minimum 1000). The
+next-check timestamp is persisted in the worker's private `state.json`, including
+before a failed request, so restarts or a declined task cannot create a tight
+turn loop. An unsuitable task can be reconsidered after the cooldown; disable
+pickup or pause the worker to stop these checks. Queue-check turns use the same
+persistent Codex session, do not fabricate durable board notifications or ACKs,
+and never publish runtime output. Existing notification delivery/recovery takes
+priority. No automatic claim, merge or new public tool is introduced.
+
+Regression coverage includes three successive jobs after the original wakes
+were consumed, active-claim suppression, opt-out, empty queues, declined-work
+cooldown and fresh post-merge wakes. Tests use a fake runtime without inference;
+actual model willingness to claim a suitable task is instructed rather than
+proved by this fixture. Docker Compose execution remains unavailable locally.

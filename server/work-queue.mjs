@@ -551,6 +551,7 @@ export function installWorkQueue({
       "UPDATE branch_submissions SET state='merged' WHERE branch_id=?",
     ).run(b.id);
     if (previous) eligibilityChanged(actor, previous.user_id);
+    eligibilityChanged(actor, b.owner_id);
   }
   function branchSubmit(b, u, sha) {
     if (b.owner_id !== u.id)

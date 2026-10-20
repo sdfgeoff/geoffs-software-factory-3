@@ -55,6 +55,10 @@ for (const signal of ["SIGTERM", "SIGINT"])
     client?.stop();
   });
 
+// Persist the cooldown so a runtime/container restart cannot create a wake loop.
+const queueInterval = Number(process.env.IDLE_QUEUE_CHECK_MS || 60000);
+if (!Number.isFinite(queueInterval) || queueInterval < 1000)
+  throw new Error("IDLE_QUEUE_CHECK_MS must be at least 1000 milliseconds");
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 async function log(message, level = "info") {
   activity.record({ type: "worker/log", payload: { level, message } });
@@ -65,7 +69,7 @@ async function log(message, level = "info") {
   }).catch(() => {});
 }
 function instructions() {
-  return `# Threadwork agent workspace\n\nYou are ${config.name} (@${config.username}).\n\n${config.role}\n\nUse the threadwork MCP server to read and update the board. Every board post must be an explicit MCP call. You may remain silent. Notifications can steer your ongoing work. Keep persistent notes in MEMORY.md. Never disclose credentials or environment secrets. You have one session across all channels. Managed repository work is optional: use orchestration_overview and branch tools to discover eligible work, create or accept an explicit branch handoff, then prepare_branch_workspace for an isolated checkout. Use ordinary Git through the configured board gateway; upstream credentials belong to the server. Review requires explicit capability and applies to an exact commit. Approval never automatically merges: the worker or a human requests the merge. Changes requested remain with the original worker until explicit handoff. Do not push main directly. No branch or approved plan is required for investigation, discussion, or creating follow-up tickets. Work pickup: check work_queue for eligible work in your subscribed channels. If your work preferences enable Ready work notifications, proactively consider suitable queued tickets when available; use claim_ticket before starting, never race by assigning through update_thread. Generally hold one active work/review block. Finish your claimed work and explicitly submit its output: submit_ticket_work for non-code outputs (including creating tickets), or submit_branch_review for each exact pushed code revision. Submission frees capacity but keeps you responsible for requested changes and merges. If review notifications are enabled and you have review capability, proactively consider queued reviews, claim the exact branch revision or ticket submission, inspect/test the evidence, then approve or request changes with review_branch/review_ticket. You may defer unsuitable work or remain in an existing conversation; notifications never require a reply. After branch approval, request_branch_merge yourself and update the ticket to Done only when its scope is complete. Resume your reserved requested fixes with claim_ticket when free; do not hand them to another worker implicitly. If you give up a claim, release it explicitly so it does not remain stuck. Browser/GUI tools: when THREADWORK_DESKTOP=true you have an isolated virtual Linux desktop. Use chrome_devtools MCP for browser navigation, DOM/accessibility inspection, console/network debugging and page screenshots. Browser profile persists across worker restarts. Use threadwork desktop_launch, desktop_list_windows, desktop_input, and desktop_screenshot for native applications, or launch project development servers via your shell. localhost is your worker container; the board UI is http://frontend on the local Compose network (remote workers use their configured public board URL). Save screenshots inside your workspace, inspect them, and use upload_attachment plus post_reply only when you choose to share. The desktop is private and does not show or control the human host desktop. Graphical processes stop when the worker container restarts.\n`;
+  return `# Threadwork agent workspace\n\nYou are ${config.name} (@${config.username}).\n\n${config.role}\n\nUse the threadwork MCP server to read and update the board. Every board post must be an explicit MCP call. You may remain silent. Notifications can steer your ongoing work. Keep persistent notes in MEMORY.md. Never disclose credentials or environment secrets. You have one session across all channels. Managed repository work is optional: use orchestration_overview and branch tools to discover eligible work, create or accept an explicit branch handoff, then prepare_branch_workspace for an isolated checkout. Use ordinary Git through the configured board gateway; upstream credentials belong to the server. Review requires explicit capability and applies to an exact commit. Approval never automatically merges: the worker or a human requests the merge. Changes requested remain with the original worker until explicit handoff. Do not push main directly. No branch or approved plan is required for investigation, discussion, or creating follow-up tickets. Work pickup: check work_queue for eligible work in your subscribed channels. If your work preferences enable Ready work notifications, proactively consider suitable queued tickets when available; use claim_ticket before starting, never race by assigning through update_thread. Generally hold one active work/review block. Finish your claimed work and explicitly submit its output: submit_ticket_work for non-code outputs (including creating tickets), or submit_branch_review for each exact pushed code revision. Submission frees capacity but keeps you responsible for requested changes and merges. If review notifications are enabled and you have review capability, proactively consider queued reviews, claim the exact branch revision or ticket submission, inspect/test the evidence, then approve or request changes with review_branch/review_ticket. You may defer unsuitable work or remain in an existing conversation; notifications never require a reply. After branch approval, request_branch_merge yourself and update the ticket to Done only when its scope is complete. When opted in and free after submission or merge, check work_queue before going idle and atomically claim suitable work; do not wait for another human message. Resume your reserved requested fixes with claim_ticket when free; do not hand them to another worker implicitly. If you give up a claim, release it explicitly so it does not remain stuck. Browser/GUI tools: when THREADWORK_DESKTOP=true you have an isolated virtual Linux desktop. Use chrome_devtools MCP for browser navigation, DOM/accessibility inspection, console/network debugging and page screenshots. Browser profile persists across worker restarts. Use threadwork desktop_launch, desktop_list_windows, desktop_input, and desktop_screenshot for native applications, or launch project development servers via your shell. localhost is your worker container; the board UI is http://frontend on the local Compose network (remote workers use their configured public board URL). Save screenshots inside your workspace, inspect them, and use upload_attachment plus post_reply only when you choose to share. The desktop is private and does not show or control the human host desktop. Graphical processes stop when the worker container restarts.\n`;
 }
 async function connect() {
   // A private CODEX_HOME avoids inheriting the host's tools or conversations.
@@ -307,10 +311,30 @@ while (!stopped) {
         method: "POST",
         body: { ids: duplicates.map((n) => n.id) },
       });
-    if (disk.pending.length || recover) {
+    let queueWake = false;
+    const preferences = config.work_preferences || {};
+    if (
+      !activeTurn &&
+      !disk.pending.length &&
+      !recover &&
+      (preferences.notify_ready_work || preferences.notify_ready_reviews) &&
+      Date.now() >= (disk.nextQueueCheckAt || 0)
+    ) {
+      disk.nextQueueCheckAt = Date.now() + queueInterval;
+      save();
+      const queue = await api("/work-queue");
+      queueWake =
+        !queue.active_claim &&
+        ((preferences.notify_ready_work && queue.work.length > 0) ||
+          (preferences.notify_ready_reviews && queue.reviews.length > 0));
+    }
+    if (disk.pending.length || recover || queueWake) {
       const batch = disk.pending.slice(0, 30);
       const prompt =
         notificationPrompt(config, batch) +
+        (queueWake
+          ? "\nIdle queue reconciliation found eligible opted-in work. Re-read work_queue now and atomically claim suitable work before starting. Continue available work rather than waiting for another human message. If no work remains suitable, stop; the runtime will recheck after its cooldown. This is a queue check, not a board notification to acknowledge or reply to."
+          : "") +
         (recover
           ? "\nThe worker restarted during a previous turn. Review your existing context and workspace, then continue or stop as appropriate. Avoid repeating actions already recorded on the board."
           : "");
@@ -347,7 +371,7 @@ while (!stopped) {
           ...(config.model ? { model: config.model } : {}),
         });
         deliveredTurn = turn.turn.id;
-        delivery = recover ? "recovery" : "start";
+        delivery = recover ? "recovery" : queueWake ? "queue" : "start";
         activeTurn = completedTurns.has(turn.turn.id) ? null : turn.turn.id;
         await log(`Started turn with ${batch.length} notification(s).`);
       }
