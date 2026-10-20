@@ -1,3 +1,4 @@
+import "./channel-browser.mjs";
 import "./reading-browser.mjs";
 import "./work-queue-browser.mjs";
 import "./orchestration-browser.mjs";

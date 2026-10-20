@@ -3807,3 +3807,202 @@ code {
   outline: 2px solid #79a893;
   outline-offset: -3px;
 }
+
+.main.channel-workspace {
+  height: var(--channel-viewport-height, 100dvh);
+  min-height: 0;
+  overflow: hidden;
+}
+.channel-workspace .topbar,
+.channel-workspace .page-heading,
+.channel-workspace .work-toolbar {
+  flex-shrink: 0;
+}
+.channel-workspace .page-heading {
+  padding-top: 22px;
+  padding-bottom: 17px;
+}
+.channel-workspace .work-toolbar {
+  margin-bottom: 0;
+}
+.channel-stream {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+.channel-stream-meta {
+  padding: 10px 39px;
+  font-size: 11px;
+  color: #64715b;
+  flex-shrink: 0;
+}
+.channel-history {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-anchor: none;
+  padding: 0 39px 18px;
+}
+.channel-history:focus-visible {
+  outline: 2px solid #79a893;
+  outline-offset: -3px;
+}
+.channel-entry {
+  display: flex;
+  align-items: flex-start;
+  gap: 13px;
+  padding: 19px 0;
+  border-bottom: 1px solid var(--line);
+}
+.channel-entry-content {
+  min-width: 0;
+  flex: 1;
+}
+.channel-stream .thread-row.channel-thread-link {
+  display: block;
+  width: 100%;
+  min-height: 0;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  text-align: left;
+}
+.channel-stream .thread-row.channel-thread-link:hover {
+  background: #eff3e9;
+}
+.channel-entry-meta {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  font-size: 12px;
+  margin-bottom: 6px;
+}
+.channel-entry-meta time {
+  font-size: 11px;
+  color: #64715b;
+}
+.channel-entry-meta .status-pill {
+  font-size: 10px;
+}
+.channel-message {
+  font-size: 13px;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+.channel-message .markdown p {
+  font-size: 13px;
+  margin: 8px 0;
+}
+.channel-reply-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: transparent;
+  border: 0;
+  padding: 5px 0;
+  color: #285847;
+  font-size: 12px;
+}
+.channel-compose-dock {
+  flex-shrink: 0;
+  max-height: calc(var(--channel-viewport-height, 100dvh) * 0.5);
+  overflow-y: auto;
+  padding: 10px 39px max(10px, env(safe-area-inset-bottom));
+  border-top: 1px solid var(--line);
+  background: #fafbf8;
+}
+.channel-compose-dock .new-message-composer {
+  margin: 0;
+  padding: 12px;
+  background: white;
+}
+.channel-compose-dock .composer-box textarea {
+  height: 72px;
+  min-height: 60px;
+  max-height: 160px;
+}
+.channel-compose-dock .new-message-heading {
+  margin-bottom: 7px;
+}
+.channel-jump {
+  align-self: center;
+  flex-shrink: 0;
+  background: #edf3e7;
+  color: #285237;
+  border: 1px solid #7a926d;
+  border-radius: 20px;
+  margin: 4px 12px;
+  padding: 7px 13px;
+  font-size: 12px;
+}
+.channel-empty {
+  text-align: center;
+  padding: 30px 16px;
+  color: #64715b;
+}
+.channel-empty h2 {
+  font-size: 16px;
+  margin: 10px 0;
+}
+.channel-empty p,
+.channel-archived {
+  font-size: 12px;
+  line-height: 1.7;
+}
+@media (max-width: 700px) {
+  .channel-workspace .page-heading {
+    padding-top: 14px;
+    padding-bottom: 12px;
+  }
+  .channel-workspace .page-heading p {
+    margin-top: 7px;
+  }
+  .channel-stream-meta {
+    padding: 8px 20px;
+  }
+  .channel-history {
+    padding: 0 20px 14px;
+  }
+  .channel-compose-dock {
+    padding: 8px 14px max(8px, env(safe-area-inset-bottom));
+  }
+  .channel-entry {
+    gap: 10px;
+  }
+  .channel-entry-meta .status-pill {
+    margin-left: 0;
+  }
+}
+@media (max-height: 600px) {
+  .channel-workspace .page-heading {
+    padding-top: 7px;
+    padding-bottom: 7px;
+  }
+  .channel-workspace .page-heading p,
+  .channel-workspace .page-heading .eyebrow {
+    display: none;
+  }
+  .channel-workspace .work-toolbar {
+    padding-top: 5px;
+    padding-bottom: 5px;
+  }
+  .channel-stream-meta {
+    padding-top: 5px;
+    padding-bottom: 5px;
+  }
+  .channel-compose-dock .composer-box textarea {
+    height: 60px;
+  }
+}
+/* Keep mention choices inside the scrollable composer on short viewports. */
+.channel-compose-dock .mention-menu {
+  position: static;
+  width: auto;
+  max-height: 130px;
+  overflow-y: auto;
+  margin: 4px 8px;
+}

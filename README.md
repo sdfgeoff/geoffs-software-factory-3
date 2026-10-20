@@ -562,3 +562,23 @@ layout/router can use the same behavior. Position memory clears when accounts
 change and does not add a backend unread-tracking state. Browser regressions at
 1440px and 390px cover multiple conversations, refreshes, delayed images, incoming
 replies, failed/successful posting and search/inbox/direct-link targeting.
+
+### Channel reading and composition
+
+Channel **Threads** displays opening messages oldest first in its own scrollable
+history, with the receiving channel labelled on the bottom composer. **Jump to
+latest** returns from older history; newly sent messages reveal the saved entry.
+Board, All work, inbox and search retain their existing ordering. Attachment-only
+entries link to their conversation to view the files.
+
+Channel and All work composer drafts (message, uploaded files and optional thread
+fields) live in the current browser session while navigating views; they are not
+saved across reload or sign-out. Channel history positions also survive view
+switches during the session. The composer uses the visual viewport height and is
+scrollable on short screens, including expanded thread options.
+
+Verification: `npm run check`, 56 unit/integration tests and browser regressions at
+1440px and 390px cover order, independent scrolling, draft/title/attachment
+retention through conversations and Board, mentions, failed-send retry, and Send
+reachability at a reduced 500px viewport. The reduced viewport simulates available
+space; real mobile keyboard/IME behavior still needs device verification.

@@ -1,7 +1,13 @@
 import useConversationScroll from "./useConversationScroll.jsx";
 import ReminderComposer from "./ReminderComposer.jsx";
 import { reminderTimeLabel } from "./reminder-time.mjs";
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, {
+  useState,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useCallback,
+} from "react";
 import { createRoot } from "react-dom/client";
 import {
   Hash,
@@ -588,6 +594,7 @@ function App() {
       localStorage.getItem("tw_view") === "board" ? "board" : "threads",
     ),
     [threads, setThreads] = useState([]),
+    [loadedChannelId, setLoadedChannelId] = useState(undefined),
     [loading, setLoading] = useState(false),
     [query, setQuery] = useState(""),
     [search, setSearch] = useState(""),
@@ -614,8 +621,12 @@ function App() {
   const toastTimer = useRef();
   const searchNavigation = useRef(0);
   const readingPositions = useRef(new Map());
+  const channelPositions = useRef(new Map());
+  const composerDrafts = useRef(new Map());
   useEffect(() => {
     readingPositions.current.clear();
+    channelPositions.current.clear();
+    composerDrafts.current.clear();
   }, [data?.user.id]);
   const sessionVersion = useRef(0);
   const notify = useCallback((message, error = false) => {
@@ -670,7 +681,10 @@ function App() {
     };
     loadThreads()
       .then((t) => {
-        if (!stale) setThreads(t);
+        if (!stale) {
+          setThreads(t);
+          setLoadedChannelId(channelId);
+        }
       })
       .catch((e) => notify(e.message, true))
       .finally(() => {
@@ -978,7 +992,9 @@ function App() {
           </div>
         </div>
       </aside>
-      <main className="main">
+      <main
+        className={`main ${page === "work" && channel && view === "threads" ? "channel-workspace" : ""}`}
+      >
         <header className="topbar">
           <div className="breadcrumb">
             <button
@@ -1163,7 +1179,7 @@ function App() {
                 )}
               </div>
             </section>
-            {view === "threads" && !channel?.archived && (
+            {view === "threads" && !channel && (
               <ReplyComposer
                 creation
                 key={channelId || "all"}
@@ -1180,234 +1196,264 @@ function App() {
                   notify("Message sent");
                 }}
                 textareaId="new-thread-message"
+                drafts={composerDrafts.current}
+                draftKey="all-work"
               />
             )}
-            <div className="work-meta">
-              <span>
-                {view === "threads"
-                  ? "Conversations, in the order they began"
-                  : "One conversation. A clear path forward."}
-              </span>
-              <span>
-                {loading ? (
-                  <>
-                    <LoaderCircle size={12} className="spin" />
-                    Updating
-                  </>
-                ) : (
-                  <>
-                    <span className="live-dot" />{" "}
-                    {view === "threads" ? "Newest first" : "Live board"}
-                  </>
-                )}
-              </span>
-            </div>
-            {!shown.length ? (
-              <Empty
-                title={
-                  search
-                    ? "No matching conversations"
-                    : "Make room for your next idea."
-                }
-                icon={search ? Search : MessageSquare}
-                action={
-                  !search && (
-                    <button
-                      className="button primary"
-                      disabled={!!channel?.archived}
-                      onClick={startThread}
-                    >
-                      <Plus size={16} />
-                      Start a conversation
-                    </button>
-                  )
-                }
-              >
-                {search
-                  ? "Try another search or adjust your filters."
-                  : "Start a thread, bring in your teammates, and move the work forward together."}
-              </Empty>
-            ) : view === "threads" ? (
-              <section className="thread-list">
-                <div className="thread-list-head">
-                  <span>CONVERSATION</span>
-                  <span>STATUS</span>
-                  <span>ASSIGNEE</span>
-                  <span>STARTED</span>
+            {channel && view === "threads" ? (
+              <ChannelStream
+                key={channel.id}
+                channel={channel}
+                threads={shown}
+                loading={loading || loadedChannelId !== channelId}
+                data={data}
+                act={act}
+                notify={notify}
+                openThread={openThread}
+                positions={channelPositions.current}
+                drafts={composerDrafts.current}
+                afterPost={() => {
+                  setQuery("");
+                  setSearch("");
+                  setAssignee("");
+                  setStatusFilter("");
+                  notify("Message sent");
+                }}
+              />
+            ) : (
+              <>
+                <div className="work-meta">
+                  <span>
+                    {view === "threads"
+                      ? "Conversations, in the order they began"
+                      : "One conversation. A clear path forward."}
+                  </span>
+                  <span>
+                    {loading ? (
+                      <>
+                        <LoaderCircle size={12} className="spin" />
+                        Updating
+                      </>
+                    ) : (
+                      <>
+                        <span className="live-dot" />{" "}
+                        {view === "threads" ? "Newest first" : "Live board"}
+                      </>
+                    )}
+                  </span>
                 </div>
-                {shown.map((t) => (
-                  <button
-                    className="thread-row"
-                    key={t.id}
-                    onClick={() => openThread(t.id)}
+                {!shown.length ? (
+                  <Empty
+                    title={
+                      search
+                        ? "No matching conversations"
+                        : "Make room for your next idea."
+                    }
+                    icon={search ? Search : MessageSquare}
+                    action={
+                      !search && (
+                        <button
+                          className="button primary"
+                          disabled={!!channel?.archived}
+                          onClick={startThread}
+                        >
+                          <Plus size={16} />
+                          Start a conversation
+                        </button>
+                      )
+                    }
                   >
-                    <div className="thread-main">
-                      <span className="thread-symbol">
-                        <MessageSquare size={19} />
-                      </span>
-                      <div>
-                        <div className="thread-title">{t.title}</div>
-                        <div className="thread-excerpt">
-                          <span>#{t.channel_name}</span>
-                          <span className="meta-dot">·</span>
-                          <span>
-                            {t.body?.replace(/[#*`>]/g, "").slice(0, 90) ||
-                              `Started by ${t.author_name}`}
+                    {search
+                      ? "Try another search or adjust your filters."
+                      : "Start a thread, bring in your teammates, and move the work forward together."}
+                  </Empty>
+                ) : view === "threads" ? (
+                  <section className="thread-list">
+                    <div className="thread-list-head">
+                      <span>CONVERSATION</span>
+                      <span>STATUS</span>
+                      <span>ASSIGNEE</span>
+                      <span>STARTED</span>
+                    </div>
+                    {shown.map((t) => (
+                      <button
+                        className="thread-row"
+                        key={t.id}
+                        onClick={() => openThread(t.id)}
+                      >
+                        <div className="thread-main">
+                          <span className="thread-symbol">
+                            <MessageSquare size={19} />
                           </span>
-                          {t.reply_count > 0 && (
-                            <>
+                          <div>
+                            <div className="thread-title">{t.title}</div>
+                            <div className="thread-excerpt">
+                              <span>#{t.channel_name}</span>
                               <span className="meta-dot">·</span>
-                              <span className="reply-count">
-                                <MessageSquare size={12} />
-                                {t.reply_count}
+                              <span>
+                                {t.body?.replace(/[#*`>]/g, "").slice(0, 90) ||
+                                  `Started by ${t.author_name}`}
                               </span>
+                              {t.reply_count > 0 && (
+                                <>
+                                  <span className="meta-dot">·</span>
+                                  <span className="reply-count">
+                                    <MessageSquare size={12} />
+                                    {t.reply_count}
+                                  </span>
+                                </>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                        <span className="status-pill">
+                          <i style={{ background: t.status_color }} />
+                          {t.status_name}
+                        </span>
+                        <div className="row-assignee">
+                          {t.assignee_id ? (
+                            <>
+                              <Avatar
+                                user={data.users.find(
+                                  (u) => u.id === t.assignee_id,
+                                )}
+                                size="small"
+                              />
+                              <span>{t.assignee_name}</span>
                             </>
+                          ) : (
+                            <span className="unassigned">Unassigned</span>
+                          )}
+                        </div>
+                        <span className="thread-date">
+                          {date(t.created_at)}
+                          <ChevronRight size={15} />
+                        </span>
+                      </button>
+                    ))}
+                  </section>
+                ) : (
+                  <section className="board">
+                    {data.statuses.map((s) => (
+                      <div
+                        className="board-column"
+                        key={s.id}
+                        onDragOver={(e) => e.preventDefault()}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          const id = Number(
+                            e.dataTransfer.getData("text/thread-id"),
+                          );
+                          if (id) changeStatus(id, s.id);
+                        }}
+                      >
+                        <header>
+                          <span>
+                            <i style={{ background: s.color }} />
+                            {s.name}
+                            <small>
+                              {shown.filter((t) => t.status_id === s.id).length}
+                            </small>
+                          </span>
+                          <button
+                            className="icon-button"
+                            aria-label={`New thread in ${s.name}`}
+                            onClick={() =>
+                              setModal({ type: "thread", status: s.id })
+                            }
+                          >
+                            <Plus size={16} />
+                          </button>
+                        </header>
+                        <div className="board-cards">
+                          {shown
+                            .filter((t) => t.status_id === s.id)
+                            .map((t) => (
+                              <article
+                                className="board-card"
+                                key={t.id}
+                                draggable
+                                onDragStart={(e) =>
+                                  e.dataTransfer.setData("text/thread-id", t.id)
+                                }
+                              >
+                                <button
+                                  className="card-content"
+                                  onClick={() => openThread(t.id)}
+                                >
+                                  <div className="card-tag">
+                                    <Hash size={12} />
+                                    {t.channel_name}
+                                    <span>TW-{t.id}</span>
+                                  </div>
+                                  <h3>{t.title}</h3>
+                                  {t.body && (
+                                    <p>
+                                      {t.body
+                                        .replace(/[#*`>]/g, "")
+                                        .slice(0, 110)}
+                                    </p>
+                                  )}
+                                </button>
+                                <footer>
+                                  <span>
+                                    {t.reply_count > 0 ? (
+                                      <>
+                                        <MessageSquare size={13} />
+                                        {t.reply_count}
+                                      </>
+                                    ) : (
+                                      date(t.created_at)
+                                    )}
+                                  </span>
+                                  <div>
+                                    <select
+                                      aria-label={`Status of ${t.title}`}
+                                      value={t.status_id}
+                                      onChange={(e) =>
+                                        changeStatus(t.id, e.target.value)
+                                      }
+                                    >
+                                      {data.statuses.map((s) => (
+                                        <option key={s.id} value={s.id}>
+                                          {s.name}
+                                        </option>
+                                      ))}
+                                    </select>
+                                    {t.assignee_id && (
+                                      <Avatar
+                                        user={data.users.find(
+                                          (u) => u.id === t.assignee_id,
+                                        )}
+                                        size="small"
+                                      />
+                                    )}
+                                  </div>
+                                </footer>
+                              </article>
+                            ))}
+                          {!shown.some((t) => t.status_id === s.id) && (
+                            <div className="column-empty">
+                              Drop a thread here
+                            </div>
                           )}
                         </div>
                       </div>
-                    </div>
-                    <span className="status-pill">
-                      <i style={{ background: t.status_color }} />
-                      {t.status_name}
-                    </span>
-                    <div className="row-assignee">
-                      {t.assignee_id ? (
-                        <>
-                          <Avatar
-                            user={data.users.find(
-                              (u) => u.id === t.assignee_id,
-                            )}
-                            size="small"
-                          />
-                          <span>{t.assignee_name}</span>
-                        </>
-                      ) : (
-                        <span className="unassigned">Unassigned</span>
-                      )}
-                    </div>
-                    <span className="thread-date">
-                      {date(t.created_at)}
-                      <ChevronRight size={15} />
-                    </span>
-                  </button>
-                ))}
-              </section>
-            ) : (
-              <section className="board">
-                {data.statuses.map((s) => (
-                  <div
-                    className="board-column"
-                    key={s.id}
-                    onDragOver={(e) => e.preventDefault()}
-                    onDrop={(e) => {
-                      e.preventDefault();
-                      const id = Number(
-                        e.dataTransfer.getData("text/thread-id"),
-                      );
-                      if (id) changeStatus(id, s.id);
-                    }}
-                  >
-                    <header>
-                      <span>
-                        <i style={{ background: s.color }} />
-                        {s.name}
-                        <small>
-                          {shown.filter((t) => t.status_id === s.id).length}
-                        </small>
-                      </span>
-                      <button
-                        className="icon-button"
-                        aria-label={`New thread in ${s.name}`}
-                        onClick={() =>
-                          setModal({ type: "thread", status: s.id })
-                        }
-                      >
-                        <Plus size={16} />
-                      </button>
-                    </header>
-                    <div className="board-cards">
-                      {shown
-                        .filter((t) => t.status_id === s.id)
-                        .map((t) => (
-                          <article
-                            className="board-card"
-                            key={t.id}
-                            draggable
-                            onDragStart={(e) =>
-                              e.dataTransfer.setData("text/thread-id", t.id)
-                            }
-                          >
-                            <button
-                              className="card-content"
-                              onClick={() => openThread(t.id)}
-                            >
-                              <div className="card-tag">
-                                <Hash size={12} />
-                                {t.channel_name}
-                                <span>TW-{t.id}</span>
-                              </div>
-                              <h3>{t.title}</h3>
-                              {t.body && (
-                                <p>
-                                  {t.body.replace(/[#*`>]/g, "").slice(0, 110)}
-                                </p>
-                              )}
-                            </button>
-                            <footer>
-                              <span>
-                                {t.reply_count > 0 ? (
-                                  <>
-                                    <MessageSquare size={13} />
-                                    {t.reply_count}
-                                  </>
-                                ) : (
-                                  date(t.created_at)
-                                )}
-                              </span>
-                              <div>
-                                <select
-                                  aria-label={`Status of ${t.title}`}
-                                  value={t.status_id}
-                                  onChange={(e) =>
-                                    changeStatus(t.id, e.target.value)
-                                  }
-                                >
-                                  {data.statuses.map((s) => (
-                                    <option key={s.id} value={s.id}>
-                                      {s.name}
-                                    </option>
-                                  ))}
-                                </select>
-                                {t.assignee_id && (
-                                  <Avatar
-                                    user={data.users.find(
-                                      (u) => u.id === t.assignee_id,
-                                    )}
-                                    size="small"
-                                  />
-                                )}
-                              </div>
-                            </footer>
-                          </article>
-                        ))}
-                      {!shown.some((t) => t.status_id === s.id) && (
-                        <div className="column-empty">Drop a thread here</div>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </section>
+                    ))}
+                  </section>
+                )}
+                <footer className="page-footer">
+                  <span>
+                    <MessageSquare size={13} /> A thread in conversation. A
+                    ticket on the board.
+                  </span>
+                  <span>
+                    Shared by people & agents{" "}
+                    <span className="footer-spark">✳</span>
+                  </span>
+                </footer>
+              </>
             )}
-            <footer className="page-footer">
-              <span>
-                <MessageSquare size={13} /> A thread in conversation. A ticket
-                on the board.
-              </span>
-              <span>
-                Shared by people & agents{" "}
-                <span className="footer-spark">✳</span>
-              </span>
-            </footer>
           </>
         )}
         {page === "inbox" && (
@@ -1948,6 +1994,225 @@ function SettingsPage({ data, act, setModal, notify }) {
     </>
   );
 }
+function ChannelStream({
+  channel,
+  threads,
+  loading,
+  data,
+  act,
+  notify,
+  openThread,
+  positions,
+  drafts,
+  afterPost,
+}) {
+  const items = [...threads]
+    .filter((t) => t.channel_id === channel.id)
+    .sort((a, b) => a.created_at.localeCompare(b.created_at) || a.id - b.id);
+  const history = useRef(null),
+    content = useRef(null),
+    initialized = useRef(false),
+    pending = useRef(null);
+  const record = useRef(
+    positions.get(channel.id) || {
+      top: 0,
+      pinned: true,
+      anchorId: null,
+      offset: 0,
+    },
+  );
+  const [away, setAway] = useState(false),
+    [sentVersion, setSentVersion] = useState(0);
+  const ready = useRef(false);
+  ready.current = !loading || items.length > 0;
+  function capture() {
+    const el = history.current;
+    if (!initialized.current || !ready.current || !el) return;
+    const top = el.getBoundingClientRect().top;
+    const anchor = [...el.querySelectorAll(".channel-entry")].find(
+      (n) => n.getBoundingClientRect().bottom > top,
+    );
+    record.current = {
+      top: el.scrollTop,
+      pinned: el.scrollHeight - el.clientHeight - el.scrollTop <= 32,
+      anchorId: anchor?.id || null,
+      offset: anchor ? anchor.getBoundingClientRect().top - top : 0,
+    };
+    positions.set(channel.id, { ...record.current });
+    setAway(!record.current.pinned);
+  }
+  function restore() {
+    const el = history.current;
+    if (!initialized.current || !ready.current || !el) return;
+    const saved = record.current;
+    if (saved.pinned) el.scrollTop = el.scrollHeight;
+    else {
+      const anchor = saved.anchorId && document.getElementById(saved.anchorId);
+      if (anchor && el.contains(anchor))
+        el.scrollTop +=
+          anchor.getBoundingClientRect().top -
+          el.getBoundingClientRect().top -
+          saved.offset;
+      else el.scrollTop = saved.top;
+    }
+    capture();
+  }
+  useLayoutEffect(() => {
+    if (!ready.current) return;
+    initialized.current = true;
+    if (pending.current && items.some((t) => t.id === pending.current)) {
+      record.current.pinned = true;
+      pending.current = null;
+    }
+    restore();
+  }, [items.map((t) => t.id).join(","), loading, sentVersion]);
+  useLayoutEffect(() => {
+    const el = history.current,
+      inner = content.current;
+    const observer = new ResizeObserver(restore);
+    observer.observe(el);
+    observer.observe(inner);
+    el.addEventListener("scroll", capture, { passive: true });
+    inner.addEventListener("load", restore, true);
+    return () => {
+      observer.disconnect();
+      el.removeEventListener("scroll", capture);
+      inner.removeEventListener("load", restore, true);
+    };
+  }, []);
+  useEffect(() => {
+    const viewport = window.visualViewport;
+    const root = history.current?.closest(".channel-workspace");
+    const resize = () =>
+      root?.style.setProperty(
+        "--channel-viewport-height",
+        `${viewport?.height || window.innerHeight}px`,
+      );
+    resize();
+    viewport?.addEventListener("resize", resize);
+    window.addEventListener("resize", resize);
+    return () => {
+      viewport?.removeEventListener("resize", resize);
+      window.removeEventListener("resize", resize);
+      root?.style.removeProperty("--channel-viewport-height");
+    };
+  }, []);
+  return (
+    <section className="channel-stream" aria-label={`Channel ${channel.name}`}>
+      <div className="channel-stream-meta">
+        Oldest to newest ·{" "}
+        {loading ? "Updating…" : `${items.length} conversations`}
+      </div>
+      <div
+        className="channel-history"
+        ref={history}
+        tabIndex={0}
+        role="region"
+        aria-label={`History in ${channel.name}`}
+      >
+        <div ref={content}>
+          {!items.length && (
+            <div className="channel-empty">
+              <MessageSquare size={24} />
+              <h2>
+                {loading
+                  ? "Loading conversations…"
+                  : "No conversations to show"}
+              </h2>
+              <p>
+                {loading
+                  ? "Your draft stays below while history loads."
+                  : "Start a conversation below, or adjust your filters."}
+              </p>
+            </div>
+          )}
+          {items.map((t) => (
+            <article
+              className="channel-entry"
+              id={`channel-thread-${t.id}`}
+              key={t.id}
+            >
+              <Avatar user={data.users.find((u) => u.id === t.created_by)} />
+              <div className="channel-entry-content">
+                <button
+                  className="thread-row channel-thread-link"
+                  onClick={() => openThread(t.id)}
+                >
+                  <span className="channel-entry-meta">
+                    <strong>{t.author_name}</strong>
+                    <time
+                      dateTime={t.created_at}
+                      title={fullDate(t.created_at)}
+                    >
+                      {timeAgo(t.created_at)}
+                    </time>
+                    <span className="status-pill">
+                      <i style={{ background: t.status_color }} />
+                      {t.status_name}
+                    </span>
+                  </span>
+                  <span className="thread-title">{t.title}</span>
+                </button>
+                <div className="channel-message">
+                  <RichText>
+                    {t.body ||
+                      "Open this conversation to view its attachments."}
+                  </RichText>
+                </div>
+                <button
+                  className="channel-reply-link"
+                  onClick={() => openThread(t.id)}
+                >
+                  {t.reply_count
+                    ? `${t.reply_count} ${t.reply_count === 1 ? "reply" : "replies"}`
+                    : "Reply in thread"}
+                  <ChevronRight size={13} />
+                </button>
+              </div>
+            </article>
+          ))}
+        </div>
+      </div>
+      {away && (
+        <button
+          className="channel-jump"
+          onClick={() => {
+            record.current.pinned = true;
+            restore();
+            history.current.focus({ preventScroll: true });
+          }}
+        >
+          Jump to latest
+        </button>
+      )}
+      <div className="channel-compose-dock">
+        {channel.archived ? (
+          <p className="channel-archived">
+            This channel is archived. Reopen it to start a conversation.
+          </p>
+        ) : (
+          <ReplyComposer
+            creation
+            data={data}
+            channelId={channel.id}
+            users={data.users}
+            act={act}
+            notify={notify}
+            drafts={drafts}
+            draftKey={`channel-${channel.id}`}
+            textareaId="new-thread-message"
+            afterPost={(saved) => {
+              pending.current = saved.id;
+              setSentVersion((v) => v + 1);
+              afterPost();
+            }}
+          />
+        )}
+      </div>
+    </section>
+  );
+}
+
 function ThreadDetail({
   thread: t,
   data,
@@ -2318,25 +2583,34 @@ function ReplyComposer({
   channelId,
   status,
   textareaId,
+  drafts,
+  draftKey,
 }) {
-  const [body, setBody] = useState(""),
-    [files, setFiles] = useState([]),
-    [busy, setBusy] = useState(false),
-    [uploading, setUploading] = useState(false),
+  const draftState = useRef(drafts?.get(draftKey) || {});
+  const savedDraft = draftState.current;
+  const [body, setBody] = useState(savedDraft.body || ""),
+    [files, setFiles] = useState(savedDraft.files || []),
+    [busy, setBusy] = useState(!!savedDraft.sending),
+    [uploading, setUploading] = useState(!!savedDraft.pending),
     [drag, setDrag] = useState(false),
     [mention, setMention] = useState(null),
     [error, setError] = useState(""),
     [destination, setDestination] = useState(
-      channelId || data?.channels.find((c) => !c.archived)?.id || "",
+      savedDraft.destination ||
+        channelId ||
+        data?.channels.find((c) => !c.archived)?.id ||
+        "",
     ),
-    [title, setTitle] = useState(""),
-    [statusId, setStatusId] = useState(status || data?.statuses[0]?.id || ""),
-    [assigneeId, setAssigneeId] = useState("");
+    [title, setTitle] = useState(savedDraft.title || ""),
+    [statusId, setStatusId] = useState(
+      savedDraft.statusId || status || data?.statuses[0]?.id || "",
+    ),
+    [assigneeId, setAssigneeId] = useState(savedDraft.assigneeId || "");
   const input = useRef(),
     textarea = useRef(),
     uploadQueue = useRef(Promise.resolve()),
     uploadJobs = useRef(0),
-    attachmentCount = useRef(0),
+    attachmentCount = useRef(savedDraft.files?.length || 0),
     sending = useRef(false),
     focusAfterSend = useRef(false);
   useEffect(() => {
@@ -2345,45 +2619,82 @@ function ReplyComposer({
       textarea.current?.focus();
     }
   }, [busy]);
+  useEffect(() => {
+    Object.assign(savedDraft, {
+      body,
+      files,
+      title,
+      statusId,
+      assigneeId,
+      destination,
+    });
+    if (drafts) drafts.set(draftKey, savedDraft);
+  }, [drafts, draftKey, body, files, title, statusId, assigneeId, destination]);
+  useEffect(() => {
+    const changed = () => {
+      setBody(savedDraft.body || "");
+      setTitle(savedDraft.title || "");
+      setBusy(!!savedDraft.sending);
+      setFiles(savedDraft.files || []);
+      setUploading(!!savedDraft.pending);
+      attachmentCount.current = savedDraft.files?.length || 0;
+    };
+    savedDraft.listeners ||= new Set();
+    savedDraft.listeners.add(changed);
+    return () => savedDraft.listeners.delete(changed);
+  }, []);
+  function uploadChanged() {
+    savedDraft.listeners?.forEach((listener) => listener());
+  }
   function upload(selected) {
     if (!selected?.length || sending.current) return;
     const selectedFiles = [...selected];
     uploadJobs.current += 1;
-    setUploading(true);
+    savedDraft.pending = (savedDraft.pending || 0) + 1;
+    uploadChanged();
     setError("");
-    uploadQueue.current = uploadQueue.current.then(async () => {
-      try {
-        for (const f of selectedFiles) {
-          if (attachmentCount.current >= 10)
-            throw new Error("Up to 10 attachments per message");
-          const form = new FormData();
-          form.set("file", f);
-          const attachment = await api("/attachments", {
-            method: "POST",
-            body: form,
-          });
-          attachmentCount.current += 1;
-          setFiles((existing) => [...existing, attachment]);
+    uploadQueue.current = (savedDraft.queue || uploadQueue.current).then(
+      async () => {
+        try {
+          for (const f of selectedFiles) {
+            if ((savedDraft.files?.length || 0) >= 10)
+              throw new Error("Up to 10 attachments per message");
+            const form = new FormData();
+            form.set("file", f);
+            const attachment = await api("/attachments", {
+              method: "POST",
+              body: form,
+            });
+            attachmentCount.current += 1;
+            savedDraft.files = [...(savedDraft.files || []), attachment];
+            uploadChanged();
+          }
+        } catch (e) {
+          setError(e.message);
+          notify(e.message, true);
+        } finally {
+          uploadJobs.current -= 1;
+          savedDraft.pending -= 1;
+          uploadChanged();
         }
-      } catch (e) {
-        setError(e.message);
-        notify(e.message, true);
-      } finally {
-        uploadJobs.current -= 1;
-        setUploading(uploadJobs.current > 0);
-      }
-    });
+      },
+    );
+    savedDraft.queue = uploadQueue.current;
   }
   async function send(e) {
     e?.preventDefault();
     if (
       sending.current ||
+      savedDraft.sending ||
+      savedDraft.pending ||
       uploadJobs.current ||
       (!body.trim() && !files.length && !(creation && title.trim()))
     )
       return;
     if (creation && !destination) return;
     sending.current = true;
+    savedDraft.sending = true;
+    uploadChanged();
     setBusy(true);
     setError("");
     try {
@@ -2403,6 +2714,8 @@ function ReplyComposer({
             : {}),
         },
       );
+      Object.assign(savedDraft, { body: "", files: [], title: "" });
+      uploadChanged();
       setBody("");
       setMention(null);
       setFiles([]);
@@ -2414,6 +2727,8 @@ function ReplyComposer({
       setError(e.message);
     } finally {
       sending.current = false;
+      savedDraft.sending = false;
+      uploadChanged();
       setBusy(false);
     }
   }
