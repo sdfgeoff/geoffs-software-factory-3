@@ -1,3 +1,4 @@
+import "./thread-pages-browser.mjs";
 import "./agent-activity-browser.mjs";
 import "./conversation-browser.mjs";
 import "./channel-browser.mjs";
@@ -922,7 +923,7 @@ test(
       await page
         .getByLabel("Search everything", { exact: true })
         .fill("does-not-exist");
-      await expect(page.getByRole("status")).toHaveText("No results found.");
+      await expect(page.locator(".global-search-summary")).toHaveText("No results found.");
       await page
         .getByLabel("Search everything", { exact: true })
         .fill("garden");
@@ -939,11 +940,11 @@ test(
         page.getByRole("button", { name: "Search everywhere", exact: true }),
       ).toBeVisible();
       await find("Private watering");
-      await expect(page.getByRole("status")).toHaveText("No results found.");
+      await expect(page.locator(".global-search-summary")).toHaveText("No results found.");
       await page
         .getByLabel("Search everything", { exact: true })
         .fill("Greenhouse runtime");
-      await expect(page.getByRole("status")).toHaveText("No results found.");
+      await expect(page.locator(".global-search-summary")).toHaveText("No results found.");
       await page.keyboard.press("Escape");
       await page.setViewportSize({ width: 390, height: 844 });
       await find("garden");

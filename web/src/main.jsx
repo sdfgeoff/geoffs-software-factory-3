@@ -595,6 +595,14 @@ function App() {
     ),
     [threads, setThreads] = useState([]),
     [loadedChannelId, setLoadedChannelId] = useState(undefined),
+    [loadedListKey, setLoadedListKey] = useState(null),
+    [threadPage, setThreadPage] = useState({
+      total: 0,
+      statusCounts: {},
+      older: null,
+      newer: null,
+    }),
+    [threadWindows, setThreadWindows] = useState({}),
     [loading, setLoading] = useState(false),
     [query, setQuery] = useState(entry.query),
     [search, setSearch] = useState(entry.query),
@@ -620,6 +628,11 @@ function App() {
     [schedules, setSchedules] = useState([]),
     [reminderOpen, setReminderOpen] = useState(false),
     [refreshKey, setRefreshKey] = useState(0);
+  const listKey = JSON.stringify([channelId, search, assignee, statusFilter]);
+  const listWindow = threadWindows[listKey] || {};
+  const windowKey = JSON.stringify(listWindow);
+  const changeWindow = (value) =>
+    setThreadWindows((windows) => ({ ...windows, [listKey]: value }));
   const originFocus = useRef(null);
   const navigation = useRef(null);
   const applyNavigation = useRef(null);
@@ -776,21 +789,17 @@ function App() {
     if (channelId) params.set("channel", channelId);
     if (search) params.set("q", search);
     if (assignee) params.set("assignee", assignee);
-    params.set("limit", "500");
-    const loadThreads = async () => {
-      const result = [];
-      while (!stale) {
-        params.set("offset", String(result.length));
-        const batch = await api("/threads?" + params);
-        result.push(...batch);
-        if (batch.length < 500) break;
-      }
-      return result;
-    };
-    loadThreads()
-      .then((t) => {
+    params.set("paged", "1");
+    params.set("limit", "50");
+    if (statusFilter) params.set("status", statusFilter);
+    for (const [key, value] of Object.entries(listWindow))
+      params.set(key, value);
+    api("/threads?" + params)
+      .then((result) => {
         if (!stale) {
-          setThreads(t);
+          setThreads(result.items);
+          setThreadPage(result);
+          setLoadedListKey(`${listKey}:${windowKey}`);
           setLoadedChannelId(channelId);
         }
       })
@@ -801,7 +810,7 @@ function App() {
     return () => {
       stale = true;
     };
-  }, [auth, channelId, search, assignee, refreshKey]);
+  }, [auth, channelId, search, assignee, statusFilter, windowKey, refreshKey]);
   useEffect(() => {
     if (!selectedId || auth !== "signedIn") {
       setDetail(null);
@@ -978,9 +987,10 @@ function App() {
       </div>
     );
   const channel = data.channels.find((c) => c.id === channelId);
-  const shown = threads.filter(
-    (t) => !statusFilter || t.status_id === Number(statusFilter),
-  );
+  const listLoading = loading || loadedListKey !== `${listKey}:${windowKey}`;
+  const shown = (
+    loadedListKey === `${listKey}:${windowKey}` ? threads : []
+  ).filter((t) => !statusFilter || t.status_id === Number(statusFilter));
   const activeAgents = data.agents.filter((a) => online(a)).length;
   return (
     <div className="app-shell">
@@ -1226,7 +1236,7 @@ function App() {
                     ) : (
                       "All work"
                     )}
-                    <span className="heading-count">{threads.length}</span>
+                    <span className="heading-count">{threadPage.total}</span>
                   </h1>
                   <p>
                     {channel?.description ||
@@ -1358,6 +1368,7 @@ function App() {
                     setSearch("");
                     setAssignee("");
                     setStatusFilter("");
+                    changeWindow({});
                     notify("Message sent");
                   }}
                   textareaId="new-thread-message"
@@ -1365,12 +1376,29 @@ function App() {
                   draftKey="all-work"
                 />
               )}
+              {!(channel && view === "threads") && (
+                <ThreadPagination
+                  page={threadPage}
+                  latest={!!(listWindow.before || listWindow.after)}
+                  loading={listLoading}
+                  changeWindow={changeWindow}
+                />
+              )}
               {channel && view === "threads" ? (
                 <ChannelStream
-                  key={channel.id}
+                  key={`${channel.id}:${listKey}:${windowKey}`}
                   channel={channel}
                   threads={shown}
-                  loading={loading || loadedChannelId !== channelId}
+                  pagination={
+                    <ThreadPagination
+                      page={threadPage}
+                      latest={!!(listWindow.before || listWindow.after)}
+                      loading={listLoading}
+                      changeWindow={changeWindow}
+                    />
+                  }
+                  positionKey={`${channel.id}:${listKey}:${windowKey}`}
+                  loading={listLoading || loadedChannelId !== channelId}
                   data={data}
                   act={act}
                   notify={notify}
@@ -1382,6 +1410,7 @@ function App() {
                     setSearch("");
                     setAssignee("");
                     setStatusFilter("");
+                    changeWindow({});
                     notify("Message sent");
                   }}
                 />
@@ -1519,10 +1548,7 @@ function App() {
                               <i style={{ background: s.color }} />
                               {s.name}
                               <small>
-                                {
-                                  shown.filter((t) => t.status_id === s.id)
-                                    .length
-                                }
+                                {threadPage.statusCounts[s.id] || 0}
                               </small>
                             </span>
                             <button
@@ -2197,8 +2223,42 @@ function SettingsPage({ data, act, setModal, notify }) {
     </>
   );
 }
+function ThreadPagination({ page, latest, loading, changeWindow }) {
+  return (
+    <nav className="thread-pagination" aria-label="Conversation pages">
+      <button
+        className="button subtle"
+        disabled={loading || !page.older}
+        onClick={() => changeWindow({ before: page.older })}
+      >
+        Older conversations
+      </button>
+      <span role="status">
+        {page.items?.length || 0} of {page.total} conversations
+      </span>
+      <button
+        className="button subtle"
+        disabled={loading || !page.newer}
+        onClick={() => changeWindow({ after: page.newer })}
+      >
+        Newer conversations
+      </button>
+      {latest && (
+        <button
+          className="button subtle"
+          disabled={loading}
+          onClick={() => changeWindow({})}
+        >
+          Latest conversations
+        </button>
+      )}
+    </nav>
+  );
+}
 function ChannelStream({
   channel,
+  pagination,
+  positionKey,
   threads,
   loading,
   data,
@@ -2217,7 +2277,7 @@ function ChannelStream({
     initialized = useRef(false),
     pending = useRef(null);
   const record = useRef(
-    positions.get(channel.id) || {
+    positions.get(positionKey) || {
       top: 0,
       pinned: true,
       anchorId: null,
@@ -2247,7 +2307,7 @@ function ChannelStream({
       anchorId: anchor?.id || null,
       offset: anchor ? anchor.getBoundingClientRect().top - top : 0,
     };
-    positions.set(channel.id, { ...record.current });
+    positions.set(positionKey, { ...record.current });
     setAway(!record.current.pinned);
   }
   function restore() {
@@ -2315,8 +2375,8 @@ function ChannelStream({
   return (
     <section className="channel-stream" aria-label={`Channel ${channel.name}`}>
       <div className="channel-stream-meta">
-        Oldest to newest ·{" "}
-        {loading ? "Updating…" : `${items.length} conversations`}
+        Oldest to newest · {loading ? "Updating…" : "50 conversations per page"}
+        {pagination}
       </div>
       <div
         className="channel-history"
@@ -2370,10 +2430,18 @@ function ChannelStream({
                 </button>
                 <div className="channel-message">
                   <RichText>
-                    {t.body ||
+                    {t.body?.slice(0, 2000) ||
                       "Open this conversation to view its attachments."}
                   </RichText>
                 </div>
+                {t.body?.length > 2000 && (
+                  <button
+                    className="channel-reply-link"
+                    onClick={() => openThread(t.id)}
+                  >
+                    Read full conversation
+                  </button>
+                )}
                 <button
                   className="channel-reply-link"
                   onClick={() => openThread(t.id)}
@@ -3442,6 +3510,7 @@ function ModalRouter({
             afterPost={(r) => {
               close();
               openThread(r.id);
+              changeWindow({});
               notify("Message sent");
             }}
           />

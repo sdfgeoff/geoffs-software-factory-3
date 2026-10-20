@@ -4339,3 +4339,19 @@ code {
   background: #f6f0de;
   border-radius: 5px;
 }
+
+.thread-pagination {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 8px 0;
+  font-size: 12px;
+}
+.thread-pagination .button {
+  min-height: 32px;
+  padding: 5px 9px;
+}
+.channel-stream-meta .thread-pagination {
+  margin-bottom: 0;
+}

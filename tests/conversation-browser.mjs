@@ -81,7 +81,7 @@ for (const width of [1440, 390])
             },
           });
         await page.goto(base);
-        await expect(page.locator(".origin-view .thread-row")).toHaveCount(62);
+        await expect(page.locator(".origin-view .thread-row")).toHaveCount(50);
         // Let the initial bootstrap and data rendering settle before scrolling;
         // scrolling itself must not depend on a later React render.
         await page.waitForTimeout(1500);
