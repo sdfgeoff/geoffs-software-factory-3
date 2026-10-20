@@ -25,7 +25,10 @@ than 100 MiB used JavaScript heap. These are explicit review targets and executa
 assertions, not a production SLA. Exact-revision approval includes accepting these
 budgets or requesting adjustment.
 
-The raw single-run results are in `thread-pages.json`. Chromium runs headless at
+The raw single-run results are in `thread-pages.json`. The measured implementation is
+`0766b94`; the subsequent integration of bootstrap response-ordering fix
+`20301fd` changes no paging/query/render path, so the scale run was not repeated
+for that integration. Chromium runs headless at
 1440×1000 against the production build on a shared worker host. Timing starts
 before navigation or the direct action; first-visible awaits a rendered row/card,
 and ready also awaits the accurate page count. Two animation frames precede the
