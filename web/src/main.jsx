@@ -1,3 +1,5 @@
+import ReminderComposer from "./ReminderComposer.jsx";
+import { reminderTimeLabel } from "./reminder-time.mjs";
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { createRoot } from "react-dom/client";
 import {
@@ -527,11 +529,10 @@ function App() {
     [connected, setConnected] = useState(true),
     [inbox, setInbox] = useState([]),
     [schedules, setSchedules] = useState([]),
-    [schedulingReminder, setSchedulingReminder] = useState(false),
+    [reminderOpen, setReminderOpen] = useState(false),
     [refreshKey, setRefreshKey] = useState(0);
   const toastTimer = useRef();
   const searchNavigation = useRef(0);
-  const reminderSubmitting = useRef(false);
   const sessionVersion = useRef(0);
   const notify = useCallback((message, error = false) => {
     clearTimeout(toastTimer.current);
@@ -1322,112 +1323,77 @@ function App() {
                 </h1>
                 <p>Replies, mentions, and changes to the work you follow.</p>
               </div>
-              <button
-                className="button"
-                onClick={() => act("/inbox/read", "POST", {}).catch(() => {})}
-              >
-                <CheckCheck size={16} />
-                Mark all read
-              </button>
-            </section>
-            <section className="reminder-panel">
-              <h2>Schedule a reminder</h2>
-              <form
-                onSubmit={async (event) => {
-                  event.preventDefault();
-                  if (reminderSubmitting.current) return;
-                  const form = event.currentTarget;
-                  const values = new FormData(form);
-                  reminderSubmitting.current = true;
-                  setSchedulingReminder(true);
-                  try {
-                    await act("/notification-schedules", "POST", {
-                      message: values.get("message"),
-                      when: values.get("when").trim(),
-                      ...(values.get("repeat").trim()
-                        ? { repeat: values.get("repeat").trim() }
-                        : {}),
-                    });
-                    form.reset();
-                    notify("Reminder scheduled");
-                  } catch {
-                    /* act displays the error */
-                  } finally {
-                    reminderSubmitting.current = false;
-                    setSchedulingReminder(false);
-                  }
-                }}
-              >
-                <label>
-                  Reminder message
-                  <input
-                    name="message"
-                    required
-                    maxLength={50000}
-                    disabled={schedulingReminder}
-                  />
-                </label>
-                <label>
-                  When
-                  <input
-                    name="when"
-                    required
-                    disabled={schedulingReminder}
-                    aria-describedby="reminder-time-help"
-                    placeholder="in one hour or 2027-01-01T09:00:00Z"
-                  />
-                </label>
-                <label>
-                  Repeat (optional)
-                  <input
-                    name="repeat"
-                    placeholder="every 1 day"
-                    disabled={schedulingReminder}
-                    aria-describedby="reminder-time-help"
-                  />
-                </label>
-                <p id="reminder-time-help">
-                  Use seconds, minutes, hours, days or weeks. Absolute times
-                  require Z or a timezone offset. Repeats use elapsed time.
-                </p>
+              <div className="heading-actions">
+                <button
+                  className="button primary"
+                  onClick={() => setReminderOpen(true)}
+                >
+                  <Bell size={16} />
+                  New reminder
+                </button>
                 <button
                   className="button"
-                  type="submit"
-                  disabled={schedulingReminder}
+                  onClick={() => act("/inbox/read", "POST", {}).catch(() => {})}
                 >
-                  {schedulingReminder ? "Scheduling…" : "Schedule reminder"}
+                  <CheckCheck size={16} />
+                  Mark all read
                 </button>
-              </form>
-              {schedules.map((schedule) => (
-                <div
-                  className="reminder-row"
-                  id={`reminder-${schedule.id}`}
-                  key={schedule.id}
-                >
-                  <div>
-                    <strong>{schedule.message}</strong>
-                    <p>
-                      {new Date(schedule.due_at).toLocaleString()}
-                      {schedule.interval_ms
-                        ? ` · every ${reminderInterval(schedule.interval_ms)}`
-                        : ""}
-                    </p>
-                  </div>
-                  <button
-                    className="button"
-                    onClick={() =>
-                      act(
-                        `/notification-schedules/${schedule.id}`,
-                        "DELETE",
-                      ).catch(() => {})
-                    }
-                    aria-label={`Cancel reminder: ${schedule.message}`}
-                  >
-                    Cancel
-                  </button>
-                </div>
-              ))}
+              </div>
             </section>
+            {reminderOpen && (
+              <ReminderComposer
+                Dialog={Dialog}
+                onClose={() => setReminderOpen(false)}
+                onCreate={(body) =>
+                  act("/notification-schedules", "POST", body)
+                }
+                onCreated={(saved) => {
+                  setReminderOpen(false);
+                  notify(
+                    `Reminder scheduled for ${reminderTimeLabel(saved.due_at)}`,
+                  );
+                }}
+              />
+            )}
+            {schedules.length > 0 && (
+              <section
+                className="reminder-upcoming"
+                aria-label="Upcoming reminders"
+              >
+                <h2>
+                  Upcoming <span>{schedules.length}</span>
+                </h2>
+                {schedules.map((schedule) => (
+                  <div
+                    className="reminder-row"
+                    id={`reminder-${schedule.id}`}
+                    key={schedule.id}
+                  >
+                    <div>
+                      <strong>{schedule.message}</strong>
+                      <p>
+                        {reminderTimeLabel(schedule.due_at)}
+                        {schedule.interval_ms
+                          ? ` · every ${reminderInterval(schedule.interval_ms)}`
+                          : ""}
+                      </p>
+                    </div>
+                    <button
+                      className="button"
+                      onClick={() =>
+                        act(
+                          `/notification-schedules/${schedule.id}`,
+                          "DELETE",
+                        ).catch(() => {})
+                      }
+                      aria-label={`Cancel reminder: ${schedule.message}`}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                ))}
+              </section>
+            )}
             <div className="inbox-list">
               {inbox.length ? (
                 inbox.map((n) => (

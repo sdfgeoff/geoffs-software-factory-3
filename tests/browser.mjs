@@ -208,13 +208,33 @@ test(
           exact: true,
         }),
       ).toBeVisible();
+      await expect(
+        page.getByRole("dialog", { name: "New reminder" }),
+      ).toHaveCount(0);
       await page
-        .getByLabel("Reminder message", { exact: true })
+        .getByRole("button", { name: "New reminder", exact: true })
+        .click();
+      await expect(
+        page.getByLabel("What do you want to remember?", { exact: true }),
+      ).toBeFocused();
+      await page.keyboard.press("Escape");
+      await expect(
+        page.getByRole("button", { name: "New reminder", exact: true }),
+      ).toBeFocused();
+      await page
+        .getByRole("button", { name: "New reminder", exact: true })
+        .click();
+      await page
+        .getByLabel("What do you want to remember?", { exact: true })
         .fill("Check the build");
-      await page.getByLabel("When", { exact: true }).fill("in one hour");
+      await expect(
+        page.getByLabel("Repeat this reminder", { exact: false }),
+      ).not.toBeChecked();
+      await page.getByLabel("Repeat this reminder", { exact: false }).check();
+      await page.getByLabel("Repeat every", { exact: true }).fill("1");
       await page
-        .getByLabel("Repeat (optional)", { exact: true })
-        .fill("every 1 day");
+        .getByRole("combobox", { name: "Interval unit", exact: true })
+        .selectOption("day");
       let schedulePosts = 0;
       let releaseSchedule;
       const scheduleGate = new Promise((resolve) => {
@@ -233,28 +253,28 @@ test(
         return route.continue();
       });
       await page
-        .getByRole("button", { name: "Schedule reminder", exact: true })
+        .getByRole("button", { name: "Create reminder", exact: true })
         .click();
-      await expect(page.getByRole("status")).toContainText(
+      await expect(page.getByRole("alert")).toContainText(
         "Test schedule failure",
       );
       await expect(
-        page.getByLabel("Reminder message", { exact: true }),
+        page.getByLabel("What do you want to remember?", { exact: true }),
       ).toHaveValue("Check the build");
-      await expect(page.getByLabel("When", { exact: true })).toHaveValue(
-        "in one hour",
-      );
       await expect(
-        page.getByLabel("Repeat (optional)", { exact: true }),
-      ).toHaveValue("every 1 day");
+        page.getByRole("button", { name: "In 1 hour", exact: true }),
+      ).toHaveAttribute("aria-pressed", "true");
+      await expect(
+        page.getByLabel("Repeat every", { exact: true }),
+      ).toHaveValue("1");
       await expect(page.locator(".reminder-row")).toHaveCount(0);
       await page
-        .getByRole("button", { name: "Schedule reminder", exact: true })
+        .getByRole("button", { name: "Create reminder", exact: true })
         .click();
       await expect(
-        page.getByRole("button", { name: "Scheduling…", exact: true }),
+        page.getByRole("button", { name: "Creating…", exact: true }),
       ).toBeDisabled();
-      await page.locator(".reminder-panel form").evaluate((form) => {
+      await page.locator(".reminder-composer").evaluate((form) => {
         form.requestSubmit();
         form.requestSubmit();
       });
@@ -276,6 +296,81 @@ test(
         })
         .click();
       await expect(page.locator(".reminder-row")).toHaveCount(0);
+      await page
+        .getByRole("button", { name: "New reminder", exact: true })
+        .click();
+      await page
+        .getByLabel("What do you want to remember?", { exact: true })
+        .fill("Custom date reminder");
+      await page
+        .getByRole("button", { name: "Choose date & time", exact: true })
+        .click();
+      await page.getByLabel("Date", { exact: true }).fill("2000-10-23");
+      await page.getByLabel("Time", { exact: true }).fill("09:30");
+      await page
+        .getByRole("button", { name: "Create reminder", exact: true })
+        .click();
+      await expect(page.getByRole("alert")).toContainText("future");
+      await expect(
+        page.getByLabel("What do you want to remember?", { exact: true }),
+      ).toHaveValue("Custom date reminder");
+      await page.getByLabel("Date", { exact: true }).fill("2030-10-23");
+      await expect(page.locator(".reminder-preview")).toContainText("2030");
+      await page
+        .getByRole("button", { name: "Create reminder", exact: true })
+        .focus();
+      await page.keyboard.press("Tab");
+      await expect(
+        page.getByRole("button", { name: "Close dialog", exact: true }),
+      ).toBeFocused();
+      await page.keyboard.press("Shift+Tab");
+      await expect(
+        page.getByRole("button", { name: "Create reminder", exact: true }),
+      ).toBeFocused();
+      await page.keyboard.press("Enter");
+      await expect(
+        page.getByRole("dialog", { name: "New reminder" }),
+      ).toHaveCount(0);
+      const customRow = page
+        .locator(".reminder-row")
+        .filter({ hasText: "Custom date reminder" });
+      await expect(customRow).toContainText("2030");
+      await customRow
+        .getByRole("button", { name: "Cancel reminder: Custom date reminder" })
+        .click();
+      await page.setViewportSize({ width: 390, height: 844 });
+      await page
+        .getByRole("button", { name: "New reminder", exact: true })
+        .click();
+      await page
+        .getByLabel("What do you want to remember?", { exact: true })
+        .fill("Mobile reminder");
+      await page.getByLabel("Repeat this reminder", { exact: false }).check();
+      const dialogFits = await page
+        .getByRole("dialog", { name: "New reminder" })
+        .evaluate((el) => {
+          const r = el.getBoundingClientRect();
+          return (
+            r.left >= 0 &&
+            r.right <= innerWidth &&
+            el.scrollWidth <= el.clientWidth
+          );
+        });
+      assert.ok(
+        dialogFits,
+        "reminder composer fits a narrow screen without horizontal scrolling",
+      );
+      await page
+        .getByRole("button", { name: "Create reminder", exact: true })
+        .scrollIntoViewIfNeeded();
+      await expect(
+        page.getByRole("button", { name: "Create reminder", exact: true }),
+      ).toBeVisible();
+      await page.screenshot({
+        path: "test-results/reminder-composer-mobile.png",
+      });
+      await page.keyboard.press("Escape");
+      await page.setViewportSize({ width: 1440, height: 1000 });
       for (const [repeat, label] of [
         ["every 2 weeks", "every 2 weeks"],
         ["every 2 hours", "every 2 hours"],
@@ -300,13 +395,9 @@ test(
       }
       const longMessage =
         "A private timed reminder: " + "remember this detail ".repeat(10);
-      await page
-        .getByLabel("Reminder message", { exact: true })
-        .fill(longMessage);
-      await page.getByLabel("When", { exact: true }).fill("in 1 second");
-      await page
-        .getByRole("button", { name: "Schedule reminder", exact: true })
-        .click();
+      await page.request.post(`${url}/api/notification-schedules`, {
+        data: { message: longMessage, when: "in 1 second" },
+      });
       await expect(
         page.locator(".inbox-item").filter({ hasText: longMessage.trim() }),
       ).toBeVisible();

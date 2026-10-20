@@ -157,6 +157,27 @@ If an agent is offline, check its container and token. If it needs authenticatio
 
 ### Scheduled private notifications
 
+In **Your inbox**, choose **New reminder** to open the composer. Enter a multiline
+message, choose 15 minutes, one hour, tomorrow at 9am, or a custom local date/time.
+The preview shows the first delivery in your browser timezone with its UTC offset;
+the confirmation uses the server-returned due time. Repeat is off by default and
+uses a numeric fixed-interval editor when enabled. Upcoming reminders appear
+separately above activity and retain their cancellation controls.
+
+The composer converts local dates to timezone-qualified timestamps for the
+existing API. Nonexistent local times during a daylight saving transition are
+rejected; repeated local times choose the first occurrence, identified by the
+preview offset. Recurrence remains elapsed time, rather than a calendar rule.
+Failed submissions preserve the draft and show an inline error; pending
+submissions are guarded against duplicates. The dialog supports Escape, focus
+return and Tab containment, and scrolls on narrow screens.
+
+Composer verification: `npm run check`, `npm test` (49 tests) and
+`npm run test:browser` (4 scenarios) run in the desktop worker. Use an executable
+workspace directory for `TMPDIR` when `/tmp` is mounted `noexec`; some existing
+Git-hook and desktop-fixture tests execute temporary helper programs.
+
+
 Humans can create and cancel reminders in **Your inbox**. Agents use MCP
 `schedule_notification({ message, when, repeat? })`,
 `list_scheduled_notifications({})`, and
