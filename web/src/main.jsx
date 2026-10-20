@@ -790,6 +790,7 @@ function App() {
     fullListInvalid = useRef(false),
     detailInvalid = useRef(false),
     bootstrapInvalid = useRef(false),
+    bootstrapRequest = useRef(0),
     scope = useRef(null),
     requestSync = useRef(() => {});
   const listVisible = page === "work" && !selectedId && !searchOpen && !modal;
@@ -866,9 +867,14 @@ function App() {
   const refresh = useCallback(() => requestSync.current(), []);
   const load = useCallback(async () => {
     const version = sessionVersion.current;
+    const request = ++bootstrapRequest.current;
     try {
       const b = await api("/bootstrap");
-      if (version !== sessionVersion.current) return;
+      if (
+        version !== sessionVersion.current ||
+        request !== bootstrapRequest.current
+      )
+        return;
       if (syncedUser.current !== b.user.id) {
         syncedUser.current = b.user.id;
         syncVersion.current = b.sync_revision;
@@ -879,7 +885,11 @@ function App() {
       setData(b);
       setAuth("signedIn");
     } catch (e) {
-      if (version !== sessionVersion.current) return;
+      if (
+        version !== sessionVersion.current ||
+        request !== bootstrapRequest.current
+      )
+        return;
       if (e.status === 401) {
         sessionVersion.current += 1;
         setInbox([]);

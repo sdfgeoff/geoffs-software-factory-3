@@ -105,3 +105,12 @@ search behavior, plus the new 510-thread refresh regression. Final checks:
 `npm run check`, changed-code Prettier, `git diff --check`,
 `TMPDIR=/state/workspace/test-tmp node --test --test-concurrency=1 tests/*.test.mjs`,
 and `TMPDIR=/state/workspace/test-tmp npm run test:browser`.
+
+Bootstrap ordering is additionally covered by a delayed older snapshot and stale
+401 arriving after a newer rename, followed by an unchanged 20-second fallback.
+Only the latest request in the same session may publish bootstrap state or errors;
+a failed latest request still recovers on the next unchanged check. The updated
+full browser suite passes all 14 cases; syntax, formatting and build also pass.
+The backend is unchanged in this follow-up: the preceding serial 84-pass/one-skip
+unit evidence and normal-traffic scale measurements were not rerun for this
+frontend ordering guard.
