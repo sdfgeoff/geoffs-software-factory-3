@@ -4029,17 +4029,8 @@ code {
   height: auto;
   box-shadow: none;
 }
-.conversation-workspace .detail-top {
-  flex-shrink: 0;
-  gap: 12px;
-  padding: 10px 28px;
-  flex-wrap: wrap;
-}
 .conversation-workspace .conversation-back {
   font-size: 12px;
-}
-.conversation-workspace .detail-top > span {
-  margin-right: auto;
 }
 .conversation-workspace .detail-title {
   padding: 16px max(28px, calc((100% - 900px) / 2)) 10px;
@@ -4080,9 +4071,6 @@ code {
   overflow-y: auto;
   margin: 4px 8px;
 }
-.conversation-workspace .detail-title h1:focus {
-  outline: none;
-}
 .conversation-unavailable {
   padding: 28px;
 }
@@ -4090,23 +4078,8 @@ code {
   margin: 24px 0 12px;
 }
 @media (max-width: 700px) {
-  .conversation-workspace .detail-top {
-    padding: 8px 14px;
-    gap: 6px;
-  }
-  .conversation-workspace .detail-top > span {
-    display: none;
-  }
-  .conversation-workspace .detail-top > div {
-    margin-left: auto;
-  }
   .conversation-workspace .detail-title {
     padding: 10px 16px 6px;
-  }
-  .conversation-workspace .detail-title h1 {
-    font-size: 20px;
-    max-height: 84px;
-    overflow-y: auto;
   }
   .conversation-workspace .thread-properties {
     padding: 6px 16px 8px;
@@ -4127,9 +4100,128 @@ code {
   .conversation-workspace .thread-properties {
     padding-block: 4px;
   }
+}
+
+/* Reading keeps one header and a compact, draft-preserving composer. */
+.conversation-main > .topbar[hidden] {
+  display: none;
+}
+.conversation-workspace .detail-top {
+  flex-wrap: nowrap;
+  min-height: 68px;
+  padding: 10px 20px;
+  gap: 12px;
+}
+.conversation-workspace .detail-top > .conversation-heading {
+  display: block;
+  flex: 1;
+  min-width: 0;
+}
+.conversation-heading h1 {
+  font-size: 17px;
+  font-weight: 550;
+  line-height: 1.4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  outline: none;
+}
+.conversation-heading > span {
+  font-size: 11px;
+  color: var(--muted);
+}
+.conversation-actions {
+  align-items: center;
+  flex-shrink: 0;
+}
+.conversation-details {
+  flex-shrink: 0;
+  max-height: 25dvh;
+  overflow-y: auto;
+  border-bottom: 1px solid var(--line);
+}
+.conversation-details[hidden] {
+  display: none;
+}
+.conversation-full-title {
+  font-size: 16px;
+  font-weight: 550;
+  overflow-wrap: anywhere;
+  margin: 0;
+}
+.conversation-workspace .conversation-details .detail-title {
+  padding-top: 10px;
+}
+.conversation-workspace > .compact-reply {
+  padding-block: 8px;
+}
+.compact-reply .composer-box textarea {
+  min-height: 36px;
+  max-height: 24dvh;
+  resize: none;
+  padding: 8px 12px;
+}
+.compact-reply.collapsed .composer-box {
+  display: flex;
+  align-items: center;
+}
+.compact-reply.collapsed textarea {
+  flex: 1;
+  width: 0;
+}
+.compact-reply.collapsed .composer-toolbar {
+  padding: 4px 6px;
+  gap: 8px;
+}
+.compact-reply.collapsed .formatting-help,
+.compact-reply.collapsed .pending-files,
+.compact-reply.collapsed .mention-menu,
+.compact-reply .composer-footer {
+  display: none;
+}
+.compact-reply .reply-expand {
+  font-size: 11px;
+  white-space: nowrap;
+}
+@media (max-width: 700px) {
   .conversation-workspace .detail-top {
-    min-height: 40px;
-    padding-block: 4px;
+    display: grid;
+    grid-template-columns: auto auto minmax(0, 1fr);
+    gap: 6px;
+    padding: 6px 12px;
+  }
+  .conversation-workspace .conversation-back {
+    padding: 6px;
+  }
+  .conversation-back > span {
+    display: none;
+  }
+  .conversation-workspace .detail-top > .conversation-heading {
+    min-width: 0;
+    margin: 0;
+  }
+  .conversation-heading h1 {
+    font-size: 15px;
+  }
+  .conversation-actions {
+    grid-column: 1 / -1;
+    justify-content: flex-end;
+  }
+  .conversation-actions .icon-button,
+  .conversation-actions .button {
+    min-height: 30px;
+    padding: 5px 8px;
+  }
+  .conversation-workspace > .compact-reply {
+    padding: 6px 12px max(6px, env(safe-area-inset-bottom));
+  }
+  .compact-reply.collapsed .composer-toolbar {
+    gap: 4px;
+  }
+  .compact-reply.collapsed .composer-toolbar .button {
+    font-size: 0;
+    gap: 0;
+    padding: 8px;
   }
 }
 

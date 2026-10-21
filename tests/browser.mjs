@@ -1,3 +1,4 @@
+import "./reading-space-browser.mjs";
 import "./board-creation-browser.mjs";
 import "./thread-pages-browser.mjs";
 import "./refresh-browser.mjs";

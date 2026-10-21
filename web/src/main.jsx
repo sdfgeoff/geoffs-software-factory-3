@@ -1317,7 +1317,7 @@ function App() {
       <main
         className={`main ${selectedId ? "conversation-main" : page === "work" && channel && view === "threads" ? "channel-workspace" : ""}`}
       >
-        <header className="topbar">
+        <header className="topbar" hidden={!!selectedId}>
           <div className="breadcrumb">
             <button
               className="icon-button mobile-toggle"
@@ -2083,6 +2083,9 @@ function App() {
                 initialTab={detailContext.tab}
                 initialBranchId={detailContext.branchId}
                 initialReplyId={detailContext.replyId}
+                openNavigation={() => setMobile(true)}
+                openSearch={() => setSearchOpen(true)}
+                connected={connected}
                 readingPositions={readingPositions.current}
                 refreshKey={detailKey}
                 refresh={refresh}
@@ -2632,9 +2635,13 @@ function ThreadDetail({
   initialBranchId,
   initialReplyId,
   readingPositions,
+  openNavigation,
+  openSearch,
+  connected,
   refreshKey,
   refresh,
 }) {
+  const [detailsOpen, setDetailsOpen] = useState(false);
   const [tab, setTab] = useState(initialTab),
     [editing, setEditing] = useState(null),
     [editBody, setEditBody] = useState("");
@@ -2668,22 +2675,60 @@ function ThreadDetail({
   }, []);
   return (
     <>
-      <div className="detail-top">
+      <header className="detail-top">
+        <button
+          className="icon-button mobile-toggle"
+          aria-label="Open navigation"
+          onClick={openNavigation}
+        >
+          <Menu size={20} />
+        </button>
         <button
           className="button conversation-back"
           aria-label="Close thread"
+          title={backLabel}
           onClick={close}
         >
           <ArrowLeft size={16} />
-          {backLabel}
+          <span>{backLabel}</span>
         </button>
-        <span>
-          <Hash size={15} />
-          {t.channel_name}
-          <ChevronRight size={13} />
-          TW-{t.id}
-        </span>
-        <div>
+        <div className="conversation-heading">
+          <h1 tabIndex={-1} ref={heading} title={t.title}>
+            {t.title}
+          </h1>
+          <span>
+            #{t.channel_name} · TW-{t.id}
+          </span>
+        </div>
+        <div className="conversation-actions">
+          {!connected && (
+            <span className="connection disconnected" role="status">
+              <Wifi size={13} />
+              Reconnecting
+            </span>
+          )}
+          <button
+            className="icon-button"
+            aria-label="Search everywhere"
+            title="Search everywhere (Ctrl/⌘ K)"
+            onClick={openSearch}
+          >
+            <Search size={17} />
+          </button>
+          <button
+            className="button conversation-details-toggle"
+            aria-label={
+              detailsOpen
+                ? "Hide conversation details"
+                : "Show conversation details"
+            }
+            aria-expanded={detailsOpen}
+            aria-controls={`conversation-details-${t.id}`}
+            onClick={() => setDetailsOpen((v) => !v)}
+          >
+            <SlidersHorizontal size={16} />
+            <span>Details</span>
+          </button>
           <button
             className="icon-button"
             aria-label="Copy conversation link"
@@ -2713,61 +2758,66 @@ function ThreadDetail({
             <Pencil size={17} />
           </button>
         </div>
-      </div>
-      <div className="detail-title">
-        <h1 tabIndex={-1} ref={heading}>
-          {t.title}
-        </h1>
-        <div className="detail-origin">
-          <Avatar
-            user={data.users.find((u) => u.id === t.created_by)}
-            size="small"
-          />
-          <span>
-            <strong>{t.author_name}</strong> started this{" "}
-            {timeAgo(t.created_at)}
-          </span>
+      </header>
+      <section
+        className="conversation-details"
+        id={`conversation-details-${t.id}`}
+        aria-label="Conversation details"
+        hidden={!detailsOpen}
+      >
+        <div className="detail-title">
+          <p className="conversation-full-title">{t.title}</p>
+          <div className="detail-origin">
+            <Avatar
+              user={data.users.find((u) => u.id === t.created_by)}
+              size="small"
+            />
+            <span>
+              <strong>{t.author_name}</strong> started this{" "}
+              {timeAgo(t.created_at)}
+            </span>
+          </div>
         </div>
-      </div>
-      <div className="thread-properties">
-        <label>
-          Status
-          <select
-            value={t.status_id}
-            onChange={(e) =>
-              act(`/threads/${t.id}`, "PATCH", {
-                status_id: Number(e.target.value),
-              }).catch(() => {})
-            }
-            style={{ borderLeftColor: t.status_color }}
-          >
-            {data.statuses.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Assignee
-          <select
-            value={t.assignee_id || ""}
-            onChange={(e) =>
-              act(`/threads/${t.id}`, "PATCH", {
-                assignee_id: e.target.value ? Number(e.target.value) : null,
-              }).catch(() => {})
-            }
-          >
-            <option value="">Unassigned</option>
-            {data.users.map((u) => (
-              <option key={u.id} value={u.id}>
-                {u.name}
-                {u.kind === "agent" ? " · AI" : ""}
-              </option>
-            ))}
-          </select>
-        </label>
-      </div>
+        <div className="thread-properties">
+          <label>
+            Status
+            <select
+              value={t.status_id}
+              onChange={(e) =>
+                act(`/threads/${t.id}`, "PATCH", {
+                  status_id: Number(e.target.value),
+                }).catch(() => {})
+              }
+              style={{ borderLeftColor: t.status_color }}
+            >
+              {data.statuses.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Assignee
+            <select
+              value={t.assignee_id || ""}
+              onChange={(e) =>
+                act(`/threads/${t.id}`, "PATCH", {
+                  assignee_id: e.target.value ? Number(e.target.value) : null,
+                }).catch(() => {})
+              }
+            >
+              <option value="">Unassigned</option>
+              {data.users.map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.name}
+                  {u.kind === "agent" ? " · AI" : ""}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+      </section>
       <div
         className="thread-scroll"
         ref={reading.viewport}
@@ -2959,6 +3009,8 @@ function ThreadDetail({
         </button>
       )}
       <ReplyComposer
+        compact
+        textareaId={`reply-body-${t.id}`}
         key={t.id}
         drafts={drafts}
         draftKey={`reply-${t.id}`}
@@ -3018,6 +3070,7 @@ function ReplyComposer({
   notify,
   afterPost,
   creation = false,
+  compact = false,
   data,
   channelId,
   status,
@@ -3045,6 +3098,7 @@ function ReplyComposer({
       savedDraft.statusId || status || data?.statuses[0]?.id || "",
     ),
     [assigneeId, setAssigneeId] = useState(savedDraft.assigneeId || "");
+  const [expanded, setExpanded] = useState(false);
   const input = useRef(),
     textarea = useRef(),
     uploadQueue = useRef(Promise.resolve()),
@@ -3052,6 +3106,12 @@ function ReplyComposer({
     attachmentCount = useRef(savedDraft.files?.length || 0),
     sending = useRef(false),
     focusAfterSend = useRef(false);
+  useLayoutEffect(() => {
+    if (!compact || !textarea.current) return;
+    const el = textarea.current;
+    el.style.height = "auto";
+    el.style.height = expanded ? `${Math.min(el.scrollHeight, 180)}px` : "36px";
+  }, [body, expanded, compact]);
   useEffect(() => {
     if (!busy && focusAfterSend.current) {
       focusAfterSend.current = false;
@@ -3087,6 +3147,7 @@ function ReplyComposer({
   }
   function upload(selected) {
     if (!selected?.length || sending.current) return;
+    if (compact) setExpanded(true);
     const selectedFiles = [...selected];
     uploadJobs.current += 1;
     savedDraft.pending = (savedDraft.pending || 0) + 1;
@@ -3191,11 +3252,12 @@ function ReplyComposer({
   }
   return (
     <form
-      className={`reply-composer ${creation ? "new-message-composer" : ""} ${drag ? "dragging" : ""}`}
+      className={`reply-composer ${compact ? `compact-reply ${expanded ? "expanded" : "collapsed"}` : ""} ${creation ? "new-message-composer" : ""} ${drag ? "dragging" : ""}`}
       onSubmit={send}
       onDragOver={(e) => {
         e.preventDefault();
         setDrag(true);
+        if (compact) setExpanded(true);
       }}
       onDragLeave={() => setDrag(false)}
       onDrop={(e) => {
@@ -3234,12 +3296,16 @@ function ReplyComposer({
       <div className="composer-box">
         <textarea
           ref={textarea}
+          onFocus={() => compact && setExpanded(true)}
+          rows={compact ? 1 : undefined}
           id={textareaId}
           aria-label={creation ? "Message" : "Reply"}
           placeholder={
             creation
               ? "Write a message… use @ to mention"
-              : "Add to the conversation… use @ to mention"
+              : compact
+                ? "Reply…"
+                : "Add to the conversation… use @ to mention"
           }
           maxLength={50000}
           disabled={busy}
@@ -3354,9 +3420,34 @@ function ReplyComposer({
                 <Paperclip size={17} />
               )}
             </button>
+            {compact && (
+              <button
+                type="button"
+                className="text-button reply-expand"
+                aria-label={expanded ? "Collapse reply" : "Expand reply"}
+                aria-expanded={expanded}
+                aria-controls={textareaId}
+                onClick={() => {
+                  setExpanded(!expanded);
+                  if (!expanded)
+                    textarea.current?.focus({ preventScroll: true });
+                  else setMention(null);
+                }}
+              >
+                {expanded
+                  ? "Collapse"
+                  : body || files.length
+                    ? "Draft · expand"
+                    : "Expand"}
+              </button>
+            )}
             <details className="context-help formatting-help">
               <summary>Formatting</summary>
-              <p>Markdown supported. Use @username to mention a teammate.</p>
+              <p>
+                Markdown supported. Use @username to mention a teammate.
+                {compact &&
+                  " Everyone in the workspace can see this thread. Ctrl / ⌘ + Enter to reply."}
+              </p>
             </details>
           </div>
           <button

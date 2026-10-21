@@ -156,8 +156,9 @@ for (const width of [1440, 390])
           box.width > width * (width === 390 ? 0.95 : 0.7),
           "conversation fills main content",
         );
+        const firstControl = width === 390 ? "Open navigation" : "Close thread";
         await region
-          .getByRole("button", { name: "Close thread", exact: true })
+          .getByRole("button", { name: firstControl, exact: true })
           .focus();
         await page.keyboard.press("Shift+Tab");
         assert.ok(

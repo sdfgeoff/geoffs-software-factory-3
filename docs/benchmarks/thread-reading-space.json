@@ -1,0 +1,44 @@
+[
+  {
+    "width": 1440,
+    "height": 900,
+    "before": {
+      "reading": 380,
+      "app": 900,
+      "viewport": 900
+    },
+    "after": {
+      "reading": 727,
+      "app": 900,
+      "viewport": 900
+    }
+  },
+  {
+    "width": 1440,
+    "height": 600,
+    "before": {
+      "reading": 153,
+      "app": 600,
+      "viewport": 600
+    },
+    "after": {
+      "reading": 427,
+      "app": 600,
+      "viewport": 600
+    }
+  },
+  {
+    "width": 390,
+    "height": 700,
+    "before": {
+      "reading": 196,
+      "app": 700,
+      "viewport": 700
+    },
+    "after": {
+      "reading": 511,
+      "app": 700,
+      "viewport": 700
+    }
+  }
+]
