@@ -65,7 +65,54 @@ export function requestContracts({ coerce = true } = {}) {
   const number = () => (coerce ? z.coerce.number() : z.number());
   const subscription = z.object({ subscribed: z.boolean() });
   const revision = z.object({ commit: commitSha }).strict();
+  const githubOwner = z
+    .string()
+    .min(1)
+    .max(100)
+    .regex(/^[a-zA-Z0-9][a-zA-Z0-9-]*$/);
+  const githubRepo = z
+    .string()
+    .min(1)
+    .max(100)
+    .regex(/^[a-zA-Z0-9_.-]+$/)
+    .refine(
+      (value) => value !== "." && value !== "..",
+      "Invalid GitHub repository name",
+    );
+  const envName = z.string().regex(/^[A-Z_][A-Z0-9_]*$/);
+  const repositoryPolicy = {
+    require_human: z.boolean(),
+    merge_mode: z.enum(["direct", "pull_request"]),
+    pr_provider: z.literal("github").nullable(),
+    github_owner: githubOwner.nullable(),
+    github_repo: githubRepo.nullable(),
+    github_token_env: envName.nullable(),
+  };
   return {
+    empty: z.object({}).strict(),
+    repositoryCreate: z
+      .object({
+        name: z.string().trim().min(1).max(100),
+        url: z.string().trim().min(1).max(2000),
+        main_branch: branchName.default("main"),
+        credential_env: envName.optional(),
+        ...repositoryPolicy,
+        require_human: repositoryPolicy.require_human.default(false),
+        merge_mode: repositoryPolicy.merge_mode.default("direct"),
+        pr_provider: repositoryPolicy.pr_provider.optional(),
+        github_owner: repositoryPolicy.github_owner.optional(),
+        github_repo: repositoryPolicy.github_repo.optional(),
+        github_token_env: repositoryPolicy.github_token_env.optional(),
+      })
+      .strict(),
+    repositoryUpdate: z
+      .object(repositoryPolicy)
+      .partial()
+      .strict()
+      .refine(
+        (value) => Object.keys(value).length > 0,
+        "Provide at least one repository policy field",
+      ),
     workPreferences: z
       .object({
         notify_ready_work: z.boolean(),

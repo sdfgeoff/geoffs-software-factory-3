@@ -91,6 +91,37 @@ export function openDatabase(path) {
       installSearchIndex(db);
       db.exec("PRAGMA user_version=9");
     }
+    const repoColumns = new Set(
+      db
+        .prepare("PRAGMA table_info(repositories)")
+        .all()
+        .map((c) => c.name),
+    );
+    for (const [name, type] of [
+      ["merge_mode", "TEXT NOT NULL DEFAULT 'direct'"],
+      ["pr_provider", "TEXT"],
+      ["github_owner", "TEXT"],
+      ["github_repo", "TEXT"],
+      ["github_token_env", "TEXT"],
+    ])
+      if (!repoColumns.has(name))
+        db.exec(`ALTER TABLE repositories ADD COLUMN ${name} ${type}`);
+    db.exec(
+      `CREATE TABLE IF NOT EXISTS branch_pull_requests(intent_id TEXT NOT NULL,branch_id INTEGER PRIMARY KEY REFERENCES managed_branches(id),requested_by INTEGER NOT NULL REFERENCES users(id),requested_head TEXT NOT NULL,requested_base TEXT NOT NULL,published_head TEXT,number INTEGER,url TEXT,state TEXT NOT NULL DEFAULT 'open',head_commit TEXT NOT NULL,base_commit TEXT NOT NULL,merge_commit TEXT,synced_at TEXT,error TEXT,previous_number INTEGER,created_at TEXT NOT NULL,updated_at TEXT NOT NULL);`,
+    );
+    if (
+      !db
+        .prepare("PRAGMA table_info(branch_pull_requests)")
+        .all()
+        .some((c) => c.name === "intent_id")
+    ) {
+      db.exec("ALTER TABLE branch_pull_requests ADD COLUMN intent_id TEXT");
+      db.exec(
+        "UPDATE branch_pull_requests SET intent_id=lower(hex(randomblob(16))) WHERE intent_id IS NULL",
+      );
+    }
+    if (db.prepare("PRAGMA user_version").get().user_version < 10)
+      db.exec("PRAGMA user_version=10");
     if (db.prepare("PRAGMA user_version").get().user_version < 8)
       db.exec("PRAGMA user_version=8");
     if (db.prepare("PRAGMA user_version").get().user_version < 7)

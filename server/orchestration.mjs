@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+import { githubClient, validateGithubRepository } from "./github.mjs";
 import {
   httpRequests as requests,
   requestId,
@@ -48,7 +50,11 @@ export function installOrchestration({
   broadcast,
   mutate,
   fail,
+  githubFetch = fetch,
 }) {
+  let stopped = false,
+    polling = false;
+  const githubAbort = new AbortController();
   const locks = new Map();
   async function locked(repoId, fn) {
     const previous = locks.get(repoId) || Promise.resolve();
@@ -66,10 +72,37 @@ export function installOrchestration({
   const repo = (value) =>
     db.prepare("SELECT * FROM repositories WHERE id=?").get(id.parse(value)) ||
     fail(404, "Repository not found");
-  const publicRepo = ({ credential_env, ...r }) => ({
+  const publicRepo = ({ credential_env, github_token_env, ...r }) => ({
     ...r,
     credential_configured: !!credential_env,
+    github_token_configured: !!github_token_env,
   });
+  const pullRequest = (branchId) => {
+    const pr = db
+      .prepare("SELECT * FROM branch_pull_requests WHERE branch_id=?")
+      .get(branchId);
+    if (!pr) return null;
+    return {
+      ...Object.fromEntries(
+        [
+          "number",
+          "url",
+          "state",
+          "head_commit",
+          "base_commit",
+          "merge_commit",
+          "synced_at",
+          "error",
+        ].map((key) => [key, pr[key]]),
+      ),
+      approval_stale:
+        pr.head_commit !== pr.requested_head ||
+        pr.base_commit !== pr.requested_base ||
+        db
+          .prepare("SELECT head_commit FROM managed_branches WHERE id=?")
+          .get(branchId)?.head_commit !== pr.requested_head,
+    };
+  };
   const cap = (u) =>
     db
       .prepare(
@@ -87,13 +120,14 @@ export function installOrchestration({
   const branch = (value) =>
     db
       .prepare(
-        "SELECT b.*,r.name AS repository_name,u.name AS owner_name FROM managed_branches b JOIN repositories r ON r.id=b.repository_id JOIN users u ON u.id=b.owner_id WHERE b.id=?",
+        "SELECT b.*,r.name AS repository_name,r.merge_mode,u.name AS owner_name FROM managed_branches b JOIN repositories r ON r.id=b.repository_id JOIN users u ON u.id=b.owner_id WHERE b.id=?",
       )
       .get(id.parse(value)) || fail(404, "Branch not found");
   const detail = (value) => {
     const b = branch(value);
     return {
       ...b,
+      pull_request: pullRequest(b.id),
       ...workQueue.branchState(b.id),
       thread_ids: db
         .prepare("SELECT thread_id FROM branch_threads WHERE branch_id=?")
@@ -117,26 +151,32 @@ export function installOrchestration({
         "SELECT t.* FROM branch_threads l JOIN threads t ON t.id=l.thread_id WHERE l.branch_id=?",
       )
       .all(b.id);
+    const emitted = [];
     for (const t of threads) {
       participate(t.id, actor);
-      event(
-        type,
-        actor,
-        t,
-        {
-          branch_id: b.id,
-          branch_name: b.name,
-          repository_id: b.repository_id,
-          ...payload,
-        },
-        [b.owner_id, ...extra],
+      emitted.push(
+        event(
+          type,
+          actor,
+          t,
+          {
+            branch_id: b.id,
+            branch_name: b.name,
+            repository_id: b.repository_id,
+            ...payload,
+          },
+          [b.owner_id, ...extra],
+        ),
       );
     }
     if (!threads.length)
-      event(type, actor, null, { branch_id: b.id, ...payload }, [
-        b.owner_id,
-        ...extra,
-      ]);
+      emitted.push(
+        event(type, actor, null, { branch_id: b.id, ...payload }, [
+          b.owner_id,
+          ...extra,
+        ]),
+      );
+    return emitted;
   };
   const atomic = (fn) => {
     const out = transaction(db, fn);
@@ -201,7 +241,7 @@ export function installOrchestration({
   async function recover(r) {
     const pending = db
       .prepare(
-        "SELECT * FROM git_operations WHERE repository_id=? AND state='pending'",
+        "SELECT * FROM git_operations WHERE repository_id=? AND state='pending' AND kind='merge'",
       )
       .all(r.id);
     if (!pending.length) return;
@@ -292,7 +332,7 @@ export function installOrchestration({
         .map(publicRepo),
       branches: db
         .prepare(
-          "SELECT b.*,r.name AS repository_name,u.name AS owner_name FROM managed_branches b JOIN repositories r ON r.id=b.repository_id JOIN users u ON u.id=b.owner_id ORDER BY b.id DESC",
+          "SELECT b.*,r.name AS repository_name,r.merge_mode,u.name AS owner_name FROM managed_branches b JOIN repositories r ON r.id=b.repository_id JOIN users u ON u.id=b.owner_id ORDER BY b.id DESC",
         )
         .all()
         .map((b) => ({ ...b, ...workQueue.branchState(b.id) })),
@@ -321,26 +361,15 @@ export function installOrchestration({
         .get(req.user.id, cacheKey);
       if (cached) return res.json(JSON.parse(cached.response));
     }
-    const input = z
-      .object({
-        name: z.string().trim().min(1).max(100),
-        url: z.string().trim().min(1).max(2000),
-        main_branch: branchName.default("main"),
-        credential_env: z
-          .string()
-          .regex(/^[A-Z_][A-Z0-9_]*$/)
-          .optional(),
-        require_human: z.boolean().default(false),
-      })
-      .strict()
-      .parse(req.body);
+    const input = requests.repositoryCreate.parse(req.body);
     validateRepositoryUrl(input.url);
     // Validate before persisting the row so a missing secret cannot leave a registered repository.
     upstreamEnv(input, env);
+    validateGithubRepository(input, env);
     const r = atomic(() =>
       db
         .prepare(
-          "INSERT INTO repositories(name,url,main_branch,credential_env,require_human,created_by,created_at) VALUES(?,?,?,?,?,?,?) RETURNING *",
+          "INSERT INTO repositories(name,url,main_branch,credential_env,require_human,created_by,created_at,merge_mode,pr_provider,github_owner,github_repo,github_token_env) VALUES(?,?,?,?,?,?,?,?,?,?,?,?) RETURNING *",
         )
         .get(
           input.name,
@@ -350,6 +379,11 @@ export function installOrchestration({
           +input.require_human,
           req.user.id,
           now(),
+          input.merge_mode,
+          input.pr_provider || null,
+          input.github_owner || null,
+          input.github_repo || null,
+          input.github_token_env || null,
         ),
     );
     await locked(r.id, async () => {
@@ -373,15 +407,65 @@ export function installOrchestration({
     res.json(output);
   });
   app.patch("/api/repositories/:repositoryId", admin, async (req, res) => {
-    const input = z
-      .object({ require_human: z.boolean() })
-      .strict()
-      .parse(req.body);
+    const input = requests.repositoryUpdate.parse(req.body);
+    if (
+      db
+        .prepare(
+          "SELECT 1 FROM git_operations WHERE repository_id=? AND state='pending'",
+        )
+        .get(id.parse(req.params.repositoryId))
+    )
+      fail(
+        409,
+        "Reconcile pending Git operations before changing repository policy",
+      );
     await withRepo(req, res, async (r) => {
+      const changedPolicy = [
+        "merge_mode",
+        "pr_provider",
+        "github_owner",
+        "github_repo",
+      ].some((key) => input[key] !== undefined && input[key] !== r[key]);
+      if (changedPolicy) {
+        for (const pending of db
+          .prepare(
+            "SELECT p.branch_id FROM branch_pull_requests p JOIN managed_branches b ON b.id=p.branch_id WHERE b.repository_id=? AND p.state!='merged'",
+          )
+          .all(r.id))
+          await syncPullRequest(
+            {
+              ...r,
+              github_token_env: input.github_token_env ?? r.github_token_env,
+            },
+            branch(pending.branch_id),
+            { recoverMissing: false },
+          );
+      }
+      if (
+        changedPolicy &&
+        db
+          .prepare(
+            "SELECT 1 FROM branch_pull_requests p JOIN managed_branches b ON b.id=p.branch_id WHERE b.repository_id=? AND (p.state='open' OR p.error IS NOT NULL)",
+          )
+          .get(r.id)
+      )
+        fail(
+          409,
+          "Close or reconcile open pull requests before changing merge strategy",
+        );
+      const next = { ...r, ...input };
+      validateGithubRepository(next, env);
       res.json(
         atomic(() => {
-          db.prepare("UPDATE repositories SET require_human=? WHERE id=?").run(
-            +input.require_human,
+          db.prepare(
+            "UPDATE repositories SET require_human=?,merge_mode=?,pr_provider=?,github_owner=?,github_repo=?,github_token_env=? WHERE id=?",
+          ).run(
+            +next.require_human,
+            next.merge_mode,
+            next.pr_provider || null,
+            next.github_owner || null,
+            next.github_repo || null,
+            next.github_token_env || null,
             r.id,
           );
           return publicRepo(repo(r.id));
@@ -441,7 +525,7 @@ export function installOrchestration({
   app.get("/api/branches", (req, res) => {
     let rows = db
       .prepare(
-        "SELECT b.*,r.name AS repository_name,u.name AS owner_name FROM managed_branches b JOIN repositories r ON r.id=b.repository_id JOIN users u ON u.id=b.owner_id ORDER BY b.id DESC",
+        "SELECT b.*,r.name AS repository_name,r.merge_mode,u.name AS owner_name FROM managed_branches b JOIN repositories r ON r.id=b.repository_id JOIN users u ON u.id=b.owner_id ORDER BY b.id DESC",
       )
       .all();
     if (req.query.thread_id) {
@@ -781,6 +865,10 @@ export function installOrchestration({
           .get(b.id)
       )
         fail(409, "Merge dependencies first");
+      if (r.merge_mode === "pull_request") {
+        await requestPullRequest(r, b, req.user.id, sha, target);
+        return res.json(detail(b.id));
+      }
       try {
         await git(repoPath(dataDir, r.id), [
           "merge-base",
@@ -841,6 +929,277 @@ export function installOrchestration({
       );
     });
   });
+  function remoteNotify(b, actor, type, payload) {
+    for (const emitted of notify(b, actor, type, payload))
+      db.prepare(
+        "INSERT OR IGNORE INTO notifications(event_id,user_id) VALUES(?,?)",
+      ).run(emitted.id, b.owner_id);
+  }
+  async function publishBranch(r, b, intent) {
+    const path = repoPath(dataDir, r.id),
+      ref = `refs/heads/${b.name}`;
+    const advertised = await git(
+      path,
+      ["ls-remote", "--heads", r.url, ref],
+      upstreamEnv(r, env),
+    );
+    if (stopped) return;
+    const previous = advertised ? advertised.split(/\s/)[0] : null;
+    if (previous !== intent.requested_head) {
+      if (previous) {
+        await git(
+          path,
+          ["fetch", "--no-tags", r.url, ref],
+          upstreamEnv(r, env),
+        );
+        if (stopped) return;
+        try {
+          await git(path, [
+            "merge-base",
+            "--is-ancestor",
+            previous,
+            intent.requested_head,
+          ]);
+        } catch {
+          fail(
+            409,
+            "Upstream working branch contains different history; fetch and reconcile it before requesting the pull request",
+          );
+        }
+      }
+      await git(
+        path,
+        [
+          "push",
+          `--force-with-lease=${ref}:${previous || "0000000000000000000000000000000000000000"}`,
+          r.url,
+          `${intent.requested_head}:${ref}`,
+        ],
+        upstreamEnv(r, env),
+      );
+    }
+    if (stopped) return;
+    atomic(() =>
+      db
+        .prepare(
+          "UPDATE branch_pull_requests SET published_head=?,updated_at=? WHERE branch_id=?",
+        )
+        .run(intent.requested_head, now(), b.id),
+    );
+  }
+  async function syncPullRequest(r, b, { recoverMissing = true } = {}) {
+    let intent = db
+      .prepare("SELECT * FROM branch_pull_requests WHERE branch_id=?")
+      .get(b.id);
+    if (!intent)
+      fail(404, "No pull request has been requested for this branch");
+    const client = githubClient(r, env, githubFetch, githubAbort.signal);
+    try {
+      let remote = intent.number
+        ? await client.get(intent.number, b)
+        : await client.find(b, intent);
+      if (stopped) return;
+      if (
+        remote?.state === "open" &&
+        recoverMissing &&
+        intent.published_head !== intent.requested_head
+      ) {
+        await publishBranch(r, b, intent);
+        if (stopped) return;
+        remote = await client.get(remote.number, b);
+      }
+      if (!remote && recoverMissing) {
+        await publishBranch(r, b, intent);
+        if (stopped) return;
+        remote = await client.find(b, intent);
+        if (!remote)
+          remote = await client.create(b, {
+            title: `Threadwork: ${b.name}`,
+            head: b.name,
+            base: r.main_branch,
+            body: `Managed by Threadwork.\n\nReviewed commit: ${intent.requested_head}\n\n<!-- threadwork-branch:${b.id}:intent:${intent.intent_id} -->\n\nRelated tickets: ${
+              db
+                .prepare(
+                  "SELECT thread_id FROM branch_threads WHERE branch_id=?",
+                )
+                .all(b.id)
+                .map((t) => `TW-${t.thread_id}`)
+                .join(", ") || "none"
+            }`,
+          });
+      }
+      if (stopped || !remote) return;
+      atomic(() => {
+        db.prepare(
+          "UPDATE branch_pull_requests SET number=?,url=?,state=?,head_commit=?,base_commit=?,merge_commit=?,synced_at=?,error=NULL,updated_at=? WHERE branch_id=?",
+        ).run(
+          remote.number,
+          remote.url,
+          remote.state,
+          remote.head_commit,
+          remote.base_commit,
+          remote.merge_commit,
+          now(),
+          now(),
+          b.id,
+        );
+        const changed =
+          intent.number !== remote.number ||
+          intent.state !== remote.state ||
+          intent.head_commit !== remote.head_commit ||
+          intent.base_commit !== remote.base_commit;
+        if (remote.state === "merged" && b.state !== "merged") {
+          db.prepare(
+            "UPDATE managed_branches SET state='merged',merged_at=? WHERE id=?",
+          ).run(now(), b.id);
+          workQueue.branchMerged(b, intent.requested_by);
+          remoteNotify(b, intent.requested_by, "branch.merged", {
+            commit: remote.head_commit,
+            merge_commit: remote.merge_commit,
+            pull_request_url: remote.url,
+            provider: "github",
+          });
+        } else if (changed)
+          remoteNotify(
+            b,
+            intent.requested_by,
+            remote.state === "closed"
+              ? "branch.pull_request_closed"
+              : remote.state === "merged"
+                ? "branch.pull_request_merged_revision"
+                : "branch.pull_request_updated",
+            {
+              pull_request_url: remote.url,
+              commit: remote.head_commit,
+              state: remote.state,
+            },
+          );
+      });
+      return remote;
+    } catch (error) {
+      if (!stopped)
+        atomic(() =>
+          db
+            .prepare(
+              "UPDATE branch_pull_requests SET error=?,synced_at=?,updated_at=? WHERE branch_id=?",
+            )
+            .run(
+              error.status
+                ? error.message
+                : "Pull request synchronization failed",
+              now(),
+              now(),
+              b.id,
+            ),
+        );
+      throw error;
+    }
+  }
+  async function requestPullRequest(r, b, actor, sha, target) {
+    const prior = db
+      .prepare("SELECT * FROM branch_pull_requests WHERE branch_id=?")
+      .get(b.id);
+    atomic(() => {
+      if (prior)
+        db.prepare(
+          "UPDATE branch_pull_requests SET intent_id=?,requested_by=?,requested_head=?,requested_base=?,head_commit=?,base_commit=?,number=?,url=?,state='open',error=NULL,previous_number=?,created_at=?,updated_at=? WHERE branch_id=?",
+        ).run(
+          prior.state === "open" ? prior.intent_id : randomUUID(),
+          actor,
+          sha,
+          target,
+          prior.state === "open" && prior.number ? prior.head_commit : sha,
+          prior.state === "open" && prior.number ? prior.base_commit : target,
+          prior.state === "open" ? prior.number : null,
+          prior.state === "open" ? prior.url : null,
+          prior.state === "open" ? prior.previous_number : prior.number,
+          prior.state === "open" ? prior.created_at : now(),
+          now(),
+          b.id,
+        );
+      else
+        db.prepare(
+          "INSERT INTO branch_pull_requests(intent_id,branch_id,requested_by,requested_head,requested_base,head_commit,base_commit,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)",
+        ).run(
+          randomUUID(),
+          b.id,
+          actor,
+          sha,
+          target,
+          sha,
+          target,
+          now(),
+          now(),
+        );
+    });
+    // The durable intent is committed before either external operation. A lost
+    // response is recovered by querying the exact repository/head/base identity.
+    const intent = db
+      .prepare("SELECT * FROM branch_pull_requests WHERE branch_id=?")
+      .get(b.id);
+    try {
+      if (!stopped) await syncPullRequest(r, b);
+    } catch (error) {
+      if (!stopped)
+        atomic(() =>
+          db
+            .prepare(
+              "UPDATE branch_pull_requests SET error=?,synced_at=?,updated_at=? WHERE branch_id=?",
+            )
+            .run(
+              error.status ? error.message : "Pull request publication failed",
+              now(),
+              now(),
+              b.id,
+            ),
+        );
+      throw error;
+    }
+  }
+  app.post("/api/branches/:id/pull-request/sync", async (req, res) => {
+    requests.empty.parse(req.body || {});
+    await withRepo(req, res, async (r) => {
+      const b = branch(req.params.id);
+      if (b.owner_id !== req.user.id && req.user.kind !== "human")
+        fail(
+          403,
+          "Only the branch owner or a human may synchronize this pull request",
+        );
+      await syncPullRequest(r, b);
+      res.json(detail(b.id));
+    });
+  });
+  async function pollPullRequests() {
+    if (stopped || polling) return;
+    polling = true;
+    try {
+      const rows = db
+        .prepare(
+          "SELECT p.branch_id,b.repository_id FROM branch_pull_requests p JOIN managed_branches b ON b.id=p.branch_id JOIN repositories r ON r.id=b.repository_id WHERE r.merge_mode='pull_request' AND p.state!='merged' ORDER BY COALESCE(p.synced_at,''),p.branch_id LIMIT 8",
+        )
+        .all();
+      for (const row of rows) {
+        if (stopped) break;
+        await locked(row.repository_id, async () => {
+          if (stopped) return;
+          try {
+            await syncPullRequest(
+              repo(row.repository_id),
+              branch(row.branch_id),
+            );
+          } catch {
+            /* Safe redacted failure is persisted; next poll or manual sync retries. */
+          }
+        });
+      }
+    } finally {
+      polling = false;
+    }
+  }
+  const prTimer = setInterval(pollPullRequests, 30000);
+  prTimer.unref();
+  const recoveryTimer = setTimeout(pollPullRequests, 1000);
+  recoveryTimer.unref();
   app.all(/^\/api\/git\/(\d+)\.git\/(.*)$/, async (req, res) => {
     const r = repo(req.params[0]);
     const endpoint = req.params[1];
@@ -940,4 +1299,12 @@ export function installOrchestration({
       res.end(output.subarray(split + separator));
     });
   });
+  return {
+    shutdown() {
+      stopped = true;
+      clearInterval(prTimer);
+      clearTimeout(recoveryTimer);
+      githubAbort.abort();
+    },
+  };
 }

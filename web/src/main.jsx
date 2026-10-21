@@ -116,6 +116,11 @@ const timeAgo = (s) => {
 };
 function notificationVerb(notification) {
   if (
+    notification.type === "branch.merged" &&
+    notification.payload.provider === "github"
+  )
+    return "reported a GitHub merge in";
+  if (
     notification.type === "work.reviewed" ||
     notification.type === "branch.reviewed"
   )
@@ -137,6 +142,10 @@ function notificationVerb(notification) {
       "review.released": "released review of",
       "branch.submitted": "submitted a branch for review in",
       "branch.merged": "merged a branch in",
+      "branch.pull_request_updated": "reported a pull request update for",
+      "branch.pull_request_closed": "reported a closed pull request for",
+      "branch.pull_request_merged_revision":
+        "reported a merged PR revision for",
     }[notification.type] || "updated"
   );
 }
@@ -144,7 +153,15 @@ function notificationSummary(notification) {
   const payload = notification.payload;
   if (payload.body || payload.summary)
     return (payload.body || payload.summary).slice(0, 160);
+  if (notification.type === "branch.merged" && payload.provider === "github")
+    return "GitHub confirmed the pull request was merged.";
   const descriptions = {
+    "branch.pull_request_updated":
+      "GitHub pull request status or revision changed.",
+    "branch.pull_request_closed":
+      "GitHub closed the pull request without merging it.",
+    "branch.pull_request_merged_revision":
+      "GitHub reported the actual merged revision.",
     "work.ready": "Available for voluntary pickup in your Work queue.",
     "review.ready":
       "A submitted outcome is ready for review in your Work queue.",
