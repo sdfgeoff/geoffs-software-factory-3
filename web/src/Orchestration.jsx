@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { GitBranch, RefreshCw, Plus } from "lucide-react";
+import { GitBranch, RefreshCw, Plus, ExternalLink } from "lucide-react";
 import { QueueAction, useWorkQueue } from "./WorkQueue.jsx";
 
 function useOrchestration(api, refreshKey) {
@@ -71,6 +71,89 @@ function ActionForm({
     </form>
   );
 }
+function mergePolicyFields(fields) {
+  const mode = fields.get("merge_mode") || "direct";
+  return {
+    merge_mode: mode,
+    ...(mode === "pull_request"
+      ? {
+          pr_provider: "github",
+          github_owner: fields.get("github_owner"),
+          github_repo: fields.get("github_repo"),
+          ...(fields.get("github_token_env")
+            ? { github_token_env: fields.get("github_token_env") }
+            : {}),
+        }
+      : {}),
+  };
+}
+function MergeModeFields({ repository }) {
+  const [mode, setMode] = useState(repository?.merge_mode || "direct");
+  return (
+    <>
+      <label>
+        Merge mode
+        <select
+          name="merge_mode"
+          aria-label="Merge mode"
+          value={mode}
+          onChange={(event) => setMode(event.target.value)}
+        >
+          <option value="direct">Direct merge by the board</option>
+          <option value="pull_request">GitHub pull request</option>
+        </select>
+      </label>
+      {mode === "pull_request" && (
+        <>
+          <label>
+            GitHub owner
+            <input
+              name="github_owner"
+              defaultValue={repository?.github_owner || ""}
+              required
+              maxLength={100}
+              placeholder="team-or-user"
+            />
+          </label>
+          <label>
+            GitHub repository
+            <input
+              name="github_repo"
+              defaultValue={repository?.github_repo || ""}
+              required
+              maxLength={100}
+              placeholder="project"
+            />
+          </label>
+          <label>
+            GitHub token environment variable
+            <input
+              name="github_token_env"
+              pattern="[A-Z_][A-Z0-9_]*"
+              defaultValue=""
+              required={!repository?.github_token_configured}
+              placeholder="PROJECT_GITHUB_TOKEN"
+            />
+            <small>
+              {repository?.github_token_configured
+                ? "A token is configured. Leave blank to keep its server environment reference."
+                : "Enter the environment variable name only. Configure the token on the server."}
+            </small>
+          </label>
+          <p className="muted">
+            Board approval permits opening or updating a pull request. A human
+            merges it on GitHub.
+          </p>
+        </>
+      )}
+    </>
+  );
+}
+function mergeModeDescription(repository) {
+  return repository?.merge_mode === "pull_request"
+    ? `GitHub pull request${repository.github_owner && repository.github_repo ? ` · ${repository.github_owner}/${repository.github_repo}` : ""}`
+    : "Direct merge by the board";
+}
 export function RepositoriesPage({ api, data, refreshKey, notify }) {
   const { state, error, refresh } = useOrchestration(api, refreshKey);
   const [registering, setRegistering] = useState(false);
@@ -88,7 +171,8 @@ export function RepositoriesPage({ api, data, refreshKey, notify }) {
           <details className="context-help">
             <summary>Review and merging</summary>
             <p>
-              Review approves an exact commit; its owner requests the merge.
+              Review approves an exact commit; its owner requests integration.
+              Repository policy chooses a direct merge or a GitHub pull request.
             </p>
           </details>
         </div>
@@ -126,6 +210,7 @@ export function RepositoriesPage({ api, data, refreshKey, notify }) {
                   ? { credential_env: f.get("credential_env") }
                   : {}),
                 require_human: f.get("require_human") === "on",
+                ...mergePolicyFields(f),
               })}
             >
               <label>
@@ -152,6 +237,7 @@ export function RepositoriesPage({ api, data, refreshKey, notify }) {
                   server.
                 </small>
               </label>
+              <MergeModeFields />
               <label className="orchestration-checkbox">
                 <input name="require_human" type="checkbox" />
                 Require human review before merging
@@ -184,18 +270,26 @@ export function RepositoriesPage({ api, data, refreshKey, notify }) {
                 ? "Human review required"
                 : "Eligible reviewer approval required"}
             </p>
+            <p className="repository-merge-mode">
+              Integration: <strong>{mergeModeDescription(repo)}</strong>
+            </p>
             {data.user.admin && (
               <ActionForm
-                key={`policy:${repo.id}:${repo.require_human}`}
+                key={`policy:${repo.id}:${repo.require_human}:${repo.merge_mode}:${repo.github_owner}:${repo.github_repo}:${repo.github_token_configured}`}
                 api={api}
                 path={`/repositories/${repo.id}`}
                 method="PATCH"
                 body={(f) => ({
                   require_human: f.get("require_human") === "on",
+                  ...mergePolicyFields(f),
                 })}
                 label="Save approval policy"
-                onDone={refresh}
+                onDone={() => {
+                  refresh();
+                  notify("Repository policy updated");
+                }}
               >
+                <MergeModeFields repository={repo} />
                 <label className="orchestration-checkbox">
                   <input
                     type="checkbox"
@@ -534,6 +628,20 @@ export function ThreadBranches({
             Main branch: {repository?.main_branch || "main"}
             {repository?.require_human ? " · Human approval required" : ""}
           </p>
+          <p className="repository-merge-mode">
+            Integration: <strong>{mergeModeDescription(repository)}</strong>
+          </p>
+          {(repository?.merge_mode === "pull_request" ||
+            detail.pull_request) && (
+            <PullRequestStatus
+              api={api}
+              branch={detail}
+              canSync={
+                detail.owner_id === data.user.id || data.user.kind === "human"
+              }
+              onDone={finished}
+            />
+          )}
           {detail.state === "active" &&
             detail.owner_id === data.user.id &&
             canWork && (
@@ -754,15 +862,31 @@ export function ThreadBranches({
                 api={api}
                 path={`/branches/${detail.id}/merge`}
                 body={() => ({})}
-                label="Request merge into main"
+                label={
+                  repository?.merge_mode === "pull_request"
+                    ? "Open/update pull request"
+                    : "Request merge into main"
+                }
                 onDone={finished}
               >
                 <p>
-                  Request integration of{" "}
-                  <code>{detail.head_commit?.slice(0, 12)}</code>. The server
-                  verifies approvals and dependencies before merging. Merges
-                  must fast-forward: if main has moved, merge main into this
-                  branch, push, and request a new review.
+                  {repository?.merge_mode === "pull_request" ? (
+                    <>
+                      Publish commit{" "}
+                      <code>{detail.head_commit?.slice(0, 12)}</code> to a
+                      GitHub pull request after board approvals and dependencies
+                      pass. A human performs the merge on GitHub; its branch
+                      rules still apply.
+                    </>
+                  ) : (
+                    <>
+                      Request integration of{" "}
+                      <code>{detail.head_commit?.slice(0, 12)}</code>. The
+                      server verifies approvals and dependencies before merging.
+                      Merges must fast-forward: if main has moved, merge main
+                      into this branch, push, and request a new review.
+                    </>
+                  )}
                 </p>
               </ActionForm>
             )}
@@ -887,5 +1011,78 @@ function BranchDiff({ api, branch, onInspect }) {
         </>
       )}
     </div>
+  );
+}
+
+function PullRequestStatus({ api, branch, canSync, onDone }) {
+  const pr = branch.pull_request;
+  return (
+    <section className="branch-pull-request" aria-label="Pull request status">
+      <h4>GitHub pull request{pr?.number ? ` #${pr.number}` : ""}</h4>
+      {pr ? (
+        <>
+          <p>
+            <strong>
+              {!pr.number || !pr.url
+                ? "Publication pending"
+                : { open: "Open", closed: "Closed", merged: "Merged" }[
+                    pr.state
+                  ] || "Publication pending"}
+            </strong>
+            {pr.url && (
+              <>
+                {" "}
+                ·{" "}
+                <a href={pr.url} target="_blank" rel="noreferrer">
+                  View on GitHub <ExternalLink size={12} />
+                </a>
+              </>
+            )}
+          </p>
+          {pr.synced_at && (
+            <p className="muted">
+              Last synced {new Date(pr.synced_at).toLocaleString()}
+            </p>
+          )}
+          {pr.head_commit && (
+            <p className="muted">
+              Pull request head: <code>{pr.head_commit.slice(0, 12)}</code>
+              {pr.head_commit !== branch.head_commit
+                ? " · PR revision differs from managed branch; board reviews apply only to their recorded commit."
+                : ""}
+            </p>
+          )}
+          {pr.base_commit && (
+            <p className="muted">
+              Pull request base: <code>{pr.base_commit.slice(0, 12)}</code>
+            </p>
+          )}
+          {pr.merge_commit && (
+            <p className="muted">
+              Merge commit: <code>{pr.merge_commit.slice(0, 12)}</code>
+            </p>
+          )}
+          {pr.error && (
+            <p className="form-error" role="alert">
+              {pr.error}
+            </p>
+          )}
+        </>
+      ) : (
+        <p className="muted">
+          No pull request published yet. Board approval is required before
+          opening one.
+        </p>
+      )}
+      {canSync && pr && (
+        <ActionForm
+          api={api}
+          path={`/branches/${branch.id}/pull-request/sync`}
+          body={() => ({})}
+          label="Refresh pull request status"
+          onDone={onDone}
+        />
+      )}
+    </section>
   );
 }

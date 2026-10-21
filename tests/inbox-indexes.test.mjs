@@ -20,7 +20,7 @@ test("v5 notification upgrade is idempotent, preserves states and supplies bound
     db.close();
     for (let i = 0; i < 2; i++) {
       db = openDatabase(path);
-      assert.equal(db.prepare("PRAGMA user_version").get().user_version, 9);
+      assert.equal(db.prepare("PRAGMA user_version").get().user_version, 10);
       assert.deepEqual(db.prepare("SELECT * FROM notifications").all(), before);
       const latest = db
         .prepare(

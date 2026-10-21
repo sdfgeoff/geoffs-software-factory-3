@@ -239,10 +239,21 @@ tool(
 );
 tool(
   "request_branch_merge",
-  "Explicitly request integration into main after review. Only the branch owner or a human can request; server enforces exact-commit approval, policy and dependencies. New commits require renewed review.",
+  "Explicitly request integration after exact-commit review, repository policy and dependencies are satisfied. Direct mode merges into main; pull-request mode publishes the feature branch and creates/reuses a GitHub PR without merging. Only the branch owner or a human can request. New commits require renewed review. Inspect the returned pull_request URL/state; humans merge externally in GitHub.",
   { branch_id: id },
   ({ branch_id }) =>
     api(`/branches/${branch_id}/merge`, {
+      method: "POST",
+      body: {},
+      timeout: 120000,
+    }),
+);
+tool(
+  "sync_branch_pull_request",
+  "Refresh a branch's external GitHub pull-request status. Only the branch owner or a human may request sync. This never merges on GitHub. A confirmed external merge updates board branch state and notifications; a closed unmerged PR remains unmerged.",
+  { branch_id: id },
+  ({ branch_id }) =>
+    api(`/branches/${branch_id}/pull-request/sync`, {
       method: "POST",
       body: {},
       timeout: 120000,

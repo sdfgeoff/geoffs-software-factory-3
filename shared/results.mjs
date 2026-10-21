@@ -131,6 +131,17 @@ const branchState = optional({
   review_claim_user_id: ni,
   review_claim: claimResult.nullable(),
 });
+export const pullRequestResult = obj({
+  number: ni,
+  url: ns,
+  state: z.enum(["open", "closed", "merged"]),
+  head_commit: s,
+  base_commit: s,
+  merge_commit: ns,
+  approval_stale: z.boolean().optional(),
+  synced_at: ns,
+  error: ns,
+});
 const branchShape = {
   id,
   repository_id: id,
@@ -140,7 +151,13 @@ const branchShape = {
   head_commit: s,
   created_at: s,
   merged_at: ns,
-  ...optional({ repository_name: s, owner_name: s, thread_ids: z.array(id) }),
+  ...optional({
+    repository_name: s,
+    owner_name: s,
+    thread_ids: z.array(id),
+    merge_mode: z.enum(["direct", "pull_request"]),
+    pull_request: pullRequestResult.nullable(),
+  }),
   ...branchState,
 };
 const branchReviewResult = obj({
@@ -171,6 +188,13 @@ export const repositoryResult = obj({
   created_by: id,
   created_at: s,
   credential_configured: z.boolean(),
+  ...optional({
+    merge_mode: z.enum(["direct", "pull_request"]),
+    pr_provider: z.literal("github").nullable(),
+    github_owner: ns,
+    github_repo: ns,
+    github_token_configured: z.boolean(),
+  }),
 });
 const capabilities = obj({ user_id: id, can_work: flag, can_review: flag });
 const agent = obj({
@@ -280,6 +304,7 @@ const branchNames = [
   "release_branch_review",
   "review_branch",
   "request_branch_merge",
+  "sync_branch_pull_request",
 ];
 export const threadPageResult = obj({
   items: z.array(threadResult),
@@ -396,9 +421,12 @@ export function httpResultContract(method, path) {
       "/api/attachments": attachmentResult,
       "/api/notification-schedules": scheduleResult,
       "/api/inbox/read": ok,
+      "/api/repositories": repositoryResult,
     };
     if (direct[path]) return direct[path];
     if (/^\/api\/repositories\/\d+\/branches$/.test(path)) return branchResult;
+    if (/^\/api\/branches\/\d+\/pull-request\/sync$/.test(path))
+      return branchResult;
     if (
       /^\/api\/branches\/\d+\/(link|handoff|dependencies|submit-review|claim-review|release-review|reviews|merge)$/.test(
         path,
@@ -414,6 +442,7 @@ export function httpResultContract(method, path) {
       return workChange;
   }
   if (method === "PATCH") {
+    if (/^\/api\/repositories\/\d+$/.test(path)) return repositoryResult;
     if (/^\/api\/threads\/\d+$/.test(path)) return threadResult;
     if (/^\/api\/channels\/\d+$/.test(path)) return channelResult;
     if (/^\/api\/replies\/\d+$/.test(path)) return ok;

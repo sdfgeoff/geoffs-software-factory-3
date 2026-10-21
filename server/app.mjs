@@ -75,6 +75,7 @@ const publicAgent = (a) => {
 export function createApp({
   dataDir = resolve("data"),
   env = process.env,
+  githubFetch = fetch,
 } = {}) {
   let publicOrigin = null;
   if (env.PUBLIC_ORIGIN) {
@@ -361,7 +362,8 @@ export function createApp({
     mutate,
     fail,
   });
-  installOrchestration({
+  const orchestration = installOrchestration({
+    githubFetch,
     workQueue,
     app,
     db,
@@ -1273,6 +1275,7 @@ export function createApp({
     closed = true;
     clearInterval(scheduleTimer);
     activity.shutdown();
+    orchestration.shutdown();
     searchPool.close();
     for (const response of streams) response.end();
     db.close();
