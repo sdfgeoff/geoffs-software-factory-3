@@ -473,7 +473,7 @@ test("schema6 migration preserves conversations and runtime logs while creating 
   db.close();
   db = openDatabase(path);
   try {
-    assert.equal(db.prepare("PRAGMA user_version").get().user_version, 10);
+    assert.equal(db.prepare("PRAGMA user_version").get().user_version, 11);
     assert.equal(
       db.prepare("SELECT message FROM agent_logs").get().message,
       "Existing runtime log",

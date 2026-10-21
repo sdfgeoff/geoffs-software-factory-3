@@ -278,7 +278,13 @@ export function pruneActivity(
       );
   }
 }
-export function installActivity({ app, db, admin, env = process.env }) {
+export function installActivity({
+  app,
+  db,
+  admin,
+  env = process.env,
+  credentialStore,
+}) {
   const configuredSecrets = Object.entries(env)
     .filter(
       ([key, value]) =>
@@ -310,12 +316,13 @@ export function installActivity({ app, db, admin, env = process.env }) {
     const result = transaction(db, () => {
       let inserted = 0;
       for (const e of input.events) {
-        const safe = sanitizeActivityPayload(e.type, e.payload, {
+        let safe = sanitizeActivityPayload(e.type, e.payload, {
           secrets: [
             ...configuredSecrets,
             req.headers.authorization?.replace(/^Bearer /, ""),
           ],
         });
+        if (credentialStore) safe = credentialStore.redact(safe);
         const row = db
           .prepare(
             "INSERT OR IGNORE INTO agent_activity(agent_id,event_id,session_id,turn_id,item_id,type,occurred_at,payload,created_at) VALUES(?,?,?,?,?,?,?,?,?) RETURNING id",

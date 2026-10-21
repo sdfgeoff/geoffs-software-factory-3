@@ -102,9 +102,17 @@ export function git(cwd, args, extra = {}) {
 }
 export const repoPath = (dataDir, id) =>
   join(dataDir, "repositories", `${id}.git`);
-export function upstreamEnv(repo, env) {
-  if (!repo.credential_env) return {};
-  const secret = env[repo.credential_env];
+export function upstreamEnv(repo, env, resolveCredential) {
+  if (repo.git_credential_id == null && !repo.credential_env) return {};
+  if (!repo.url.startsWith("https://"))
+    throw Object.assign(
+      new Error("Token credentials require an HTTPS repository URL"),
+      { status: 400 },
+    );
+  const secret =
+    repo.git_credential_id != null
+      ? resolveCredential?.(repo.git_credential_id)
+      : env[repo.credential_env];
   if (!secret)
     throw Object.assign(
       new Error("Repository credential is not configured on the server"),
@@ -121,7 +129,7 @@ export function upstreamEnv(repo, env) {
     GIT_CONFIG_VALUE_0: `Authorization: Basic ${Buffer.from(`x-access-token:${secret}`).toString("base64")}`,
   };
 }
-export async function initializeRepo(dataDir, repo, env) {
+export async function initializeRepo(dataDir, repo, env, resolveCredential) {
   const path = repoPath(dataDir, repo.id);
   mkdirSync(path, { recursive: true });
   await git(path, ["init", "--bare"]);
@@ -135,7 +143,7 @@ export async function initializeRepo(dataDir, repo, env) {
       repo.url,
       `+refs/heads/${repo.main_branch}:refs/heads/${repo.main_branch}`,
     ],
-    upstreamEnv(repo, env),
+    upstreamEnv(repo, env, resolveCredential),
   );
   const hook = join(path, "hooks", "pre-receive");
   writeFileSync(

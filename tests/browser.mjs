@@ -1,4 +1,5 @@
 import "./reading-space-browser.mjs";
+import "./repository-credentials-browser.mjs";
 import "./pull-request-browser.mjs";
 import "./board-creation-browser.mjs";
 import "./thread-pages-browser.mjs";

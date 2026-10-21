@@ -51,7 +51,10 @@ export function installOrchestration({
   mutate,
   fail,
   githubFetch = fetch,
+  credentialStore,
 }) {
+  const resolveCredential = (credentialId) =>
+    credentialStore.resolve(credentialId);
   let stopped = false,
     polling = false;
   const githubAbort = new AbortController();
@@ -74,8 +77,9 @@ export function installOrchestration({
     fail(404, "Repository not found");
   const publicRepo = ({ credential_env, github_token_env, ...r }) => ({
     ...r,
-    credential_configured: !!credential_env,
-    github_token_configured: !!github_token_env,
+    credential_configured: r.git_credential_id != null || !!credential_env,
+    github_token_configured:
+      r.github_credential_id != null || !!github_token_env,
   });
   const pullRequest = (branchId) => {
     const pr = db
@@ -198,7 +202,7 @@ export function installOrchestration({
         r.url,
         `+refs/heads/${r.main_branch}:refs/remotes/upstream/${r.main_branch}`,
       ],
-      upstreamEnv(r, env),
+      upstreamEnv(r, env, resolveCredential),
     );
     const current = await git(repoPath(dataDir, r.id), [
       "rev-parse",
@@ -291,16 +295,18 @@ export function installOrchestration({
   }
   const ensureReady = async (r) => {
     if (!existsSync(join(repoPath(dataDir, r.id), ".threadwork-ready")))
-      await initializeRepo(dataDir, r, env);
+      await initializeRepo(dataDir, r, env, resolveCredential);
   };
-  const withRepo = (req, res, fn) => {
+  const withRepo = (req, res, fn, { prepare = true } = {}) => {
     const r = repo(
       req.params.repositoryId || branch(req.params.id).repository_id,
     );
     return locked(r.id, async () => {
-      await ensureReady(repo(r.id));
-      await recover(r);
-      await reconcile(r, req.user.id);
+      if (prepare) {
+        await ensureReady(repo(r.id));
+        await recover(r);
+        await reconcile(r, req.user.id);
+      }
       const key = req.headers["idempotency-key"];
       if (key && !/^[a-zA-Z0-9:_-]{1,150}$/.test(key))
         fail(400, "Invalid idempotency key");
@@ -342,6 +348,20 @@ export function installOrchestration({
         .map((u) => ({ user_id: u.id, ...cap(u) })),
     }),
   );
+  app.get("/api/admin/repository-credentials", admin, (req, res) =>
+    res.json(credentialStore.list()),
+  );
+  app.post("/api/admin/repository-credentials", admin, (req, res) => {
+    const input = requests.repositoryCredentialCreate.parse(req.body);
+    res.json(credentialStore.create(input));
+  });
+  app.patch("/api/admin/repository-credentials/:id", admin, (req, res) => {
+    const input = requests.repositoryCredentialUpdate.parse(req.body);
+    res.json(credentialStore.update(id.parse(req.params.id), input));
+  });
+  app.delete("/api/admin/repository-credentials/:id", admin, (req, res) =>
+    res.json(credentialStore.remove(id.parse(req.params.id))),
+  );
   app.get("/api/repositories", (req, res) =>
     res.json(
       db
@@ -363,13 +383,18 @@ export function installOrchestration({
     }
     const input = requests.repositoryCreate.parse(req.body);
     validateRepositoryUrl(input.url);
+    for (const selected of [
+      input.git_credential_id,
+      input.github_credential_id,
+    ])
+      if (selected != null) resolveCredential(selected);
     // Validate before persisting the row so a missing secret cannot leave a registered repository.
-    upstreamEnv(input, env);
-    validateGithubRepository(input, env);
+    upstreamEnv(input, env, resolveCredential);
+    validateGithubRepository(input, env, resolveCredential);
     const r = atomic(() =>
       db
         .prepare(
-          "INSERT INTO repositories(name,url,main_branch,credential_env,require_human,created_by,created_at,merge_mode,pr_provider,github_owner,github_repo,github_token_env) VALUES(?,?,?,?,?,?,?,?,?,?,?,?) RETURNING *",
+          "INSERT INTO repositories(name,url,main_branch,credential_env,require_human,created_by,created_at,merge_mode,pr_provider,github_owner,github_repo,github_token_env,git_credential_id,github_credential_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING *",
         )
         .get(
           input.name,
@@ -384,11 +409,13 @@ export function installOrchestration({
           input.github_owner || null,
           input.github_repo || null,
           input.github_token_env || null,
+          input.git_credential_id ?? null,
+          input.github_credential_id ?? null,
         ),
     );
     await locked(r.id, async () => {
       try {
-        await initializeRepo(dataDir, r, env);
+        await initializeRepo(dataDir, r, env, resolveCredential);
       } catch (error) {
         atomic(() =>
           db.prepare("DELETE FROM repositories WHERE id=?").run(r.id),
@@ -408,70 +435,104 @@ export function installOrchestration({
   });
   app.patch("/api/repositories/:repositoryId", admin, async (req, res) => {
     const input = requests.repositoryUpdate.parse(req.body);
-    if (
-      db
-        .prepare(
-          "SELECT 1 FROM git_operations WHERE repository_id=? AND state='pending'",
-        )
-        .get(id.parse(req.params.repositoryId))
-    )
-      fail(
-        409,
-        "Reconcile pending Git operations before changing repository policy",
-      );
-    await withRepo(req, res, async (r) => {
-      const changedPolicy = [
-        "merge_mode",
-        "pr_provider",
-        "github_owner",
-        "github_repo",
-      ].some((key) => input[key] !== undefined && input[key] !== r[key]);
-      if (changedPolicy) {
-        for (const pending of db
-          .prepare(
-            "SELECT p.branch_id FROM branch_pull_requests p JOIN managed_branches b ON b.id=p.branch_id WHERE b.repository_id=? AND p.state!='merged'",
-          )
-          .all(r.id))
-          await syncPullRequest(
-            {
-              ...r,
-              github_token_env: input.github_token_env ?? r.github_token_env,
-            },
-            branch(pending.branch_id),
-            { recoverMissing: false },
-          );
-      }
-      if (
-        changedPolicy &&
-        db
-          .prepare(
-            "SELECT 1 FROM branch_pull_requests p JOIN managed_branches b ON b.id=p.branch_id WHERE b.repository_id=? AND (p.state='open' OR p.error IS NOT NULL)",
-          )
-          .get(r.id)
-      )
-        fail(
-          409,
-          "Close or reconcile open pull requests before changing merge strategy",
+    await withRepo(
+      req,
+      res,
+      async (r) => {
+        const credentialKeys = new Set([
+          "git_credential_id",
+          "github_credential_id",
+          "credential_env",
+          "github_token_env",
+        ]);
+        const changed = Object.keys(input).filter((key) =>
+          key === "require_human"
+            ? !!input[key] !== !!r[key]
+            : input[key] !== r[key],
         );
-      const next = { ...r, ...input };
-      validateGithubRepository(next, env);
-      res.json(
-        atomic(() => {
-          db.prepare(
-            "UPDATE repositories SET require_human=?,merge_mode=?,pr_provider=?,github_owner=?,github_repo=?,github_token_env=? WHERE id=?",
-          ).run(
-            +next.require_human,
-            next.merge_mode,
-            next.pr_provider || null,
-            next.github_owner || null,
-            next.github_repo || null,
-            next.github_token_env || null,
-            r.id,
+        const onlyCredentials = changed.every((key) => credentialKeys.has(key));
+        if (
+          !onlyCredentials &&
+          db
+            .prepare(
+              "SELECT 1 FROM git_operations WHERE repository_id=? AND state='pending'",
+            )
+            .get(r.id)
+        )
+          fail(
+            409,
+            "Reconcile pending Git operations before changing repository policy",
           );
-          return publicRepo(repo(r.id));
-        }),
-      );
-    });
+        const changedPolicy = [
+          "merge_mode",
+          "pr_provider",
+          "github_owner",
+          "github_repo",
+        ].some((key) => input[key] !== undefined && input[key] !== r[key]);
+        if (changedPolicy) {
+          for (const pending of db
+            .prepare(
+              "SELECT p.branch_id FROM branch_pull_requests p JOIN managed_branches b ON b.id=p.branch_id WHERE b.repository_id=? AND p.state!='merged'",
+            )
+            .all(r.id))
+            await syncPullRequest(
+              {
+                ...r,
+                github_token_env:
+                  input.github_token_env === undefined
+                    ? r.github_token_env
+                    : input.github_token_env,
+                github_credential_id:
+                  input.github_credential_id === undefined
+                    ? r.github_credential_id
+                    : input.github_credential_id,
+              },
+              branch(pending.branch_id),
+              { recoverMissing: false },
+            );
+        }
+        if (
+          changedPolicy &&
+          db
+            .prepare(
+              "SELECT 1 FROM branch_pull_requests p JOIN managed_branches b ON b.id=p.branch_id WHERE b.repository_id=? AND (p.state='open' OR p.error IS NOT NULL)",
+            )
+            .get(r.id)
+        )
+          fail(
+            409,
+            "Close or reconcile open pull requests before changing merge strategy",
+          );
+        const next = { ...r, ...input };
+        for (const selected of [
+          next.git_credential_id,
+          next.github_credential_id,
+        ])
+          if (selected != null) resolveCredential(selected);
+        upstreamEnv(next, env, resolveCredential);
+        validateGithubRepository(next, env, resolveCredential);
+        res.json(
+          atomic(() => {
+            db.prepare(
+              "UPDATE repositories SET require_human=?,merge_mode=?,pr_provider=?,github_owner=?,github_repo=?,github_token_env=?,credential_env=?,git_credential_id=?,github_credential_id=? WHERE id=?",
+            ).run(
+              +next.require_human,
+              next.merge_mode,
+              next.pr_provider || null,
+              next.github_owner || null,
+              next.github_repo || null,
+              next.github_token_env || null,
+              next.credential_env || null,
+              next.git_credential_id ?? null,
+              next.github_credential_id ?? null,
+              r.id,
+            );
+            return publicRepo(repo(r.id));
+          }),
+        );
+      },
+      { prepare: false },
+    );
   });
   app.post("/api/users/:id/capabilities", admin, (req, res) => {
     const input = z
@@ -581,13 +642,13 @@ export function installOrchestration({
       const remote = await git(
         repoPath(dataDir, r.id),
         ["ls-remote", "--heads", r.url, `refs/heads/${input.name}`],
-        upstreamEnv(r, env),
+        upstreamEnv(r, env, resolveCredential),
       );
       if (remote) {
         await git(
           repoPath(dataDir, r.id),
           ["fetch", "--no-tags", r.url, `refs/heads/${input.name}`],
-          upstreamEnv(r, env),
+          upstreamEnv(r, env, resolveCredential),
         );
         sha = await git(repoPath(dataDir, r.id), ["rev-parse", "FETCH_HEAD"]);
       }
@@ -898,7 +959,7 @@ export function installOrchestration({
             r.url,
             `${sha}:refs/heads/${r.main_branch}`,
           ],
-          upstreamEnv(r, env),
+          upstreamEnv(r, env, resolveCredential),
         );
       } catch (error) {
         // Leave uncertain intents pending; the next operation reconciles against upstream.
@@ -941,7 +1002,7 @@ export function installOrchestration({
     const advertised = await git(
       path,
       ["ls-remote", "--heads", r.url, ref],
-      upstreamEnv(r, env),
+      upstreamEnv(r, env, resolveCredential),
     );
     if (stopped) return;
     const previous = advertised ? advertised.split(/\s/)[0] : null;
@@ -950,7 +1011,7 @@ export function installOrchestration({
         await git(
           path,
           ["fetch", "--no-tags", r.url, ref],
-          upstreamEnv(r, env),
+          upstreamEnv(r, env, resolveCredential),
         );
         if (stopped) return;
         try {
@@ -975,7 +1036,7 @@ export function installOrchestration({
           r.url,
           `${intent.requested_head}:${ref}`,
         ],
-        upstreamEnv(r, env),
+        upstreamEnv(r, env, resolveCredential),
       );
     }
     if (stopped) return;
@@ -993,7 +1054,13 @@ export function installOrchestration({
       .get(b.id);
     if (!intent)
       fail(404, "No pull request has been requested for this branch");
-    const client = githubClient(r, env, githubFetch, githubAbort.signal);
+    const client = githubClient(
+      r,
+      env,
+      githubFetch,
+      githubAbort.signal,
+      resolveCredential,
+    );
     try {
       let remote = intent.number
         ? await client.get(intent.number, b)

@@ -170,6 +170,9 @@ test(
         .getByLabel("GitHub repository", { exact: true })
         .fill("garden");
       await garden
+        .getByLabel("GitHub token", { exact: true })
+        .selectOption("legacy");
+      await garden
         .getByLabel("GitHub token environment variable", { exact: false })
         .fill("PROJECT_GITHUB_TOKEN");
       await garden
@@ -208,6 +211,9 @@ test(
       await registration
         .getByLabel("GitHub repository", { exact: true })
         .fill("new-project");
+      await registration
+        .getByLabel("GitHub token", { exact: true })
+        .selectOption("legacy");
       await registration
         .getByLabel("GitHub token environment variable", { exact: false })
         .fill("NEW_PROJECT_GITHUB_TOKEN");

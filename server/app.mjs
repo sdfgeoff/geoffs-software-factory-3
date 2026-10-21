@@ -1,3 +1,4 @@
+import { createCredentialStore } from "./credentials.mjs";
 import {
   httpRequests as requests,
   requestId,
@@ -93,6 +94,7 @@ export function createApp({
   mkdirSync(join(dataDir, "uploads"), { recursive: true });
   const db = openDatabase(join(dataDir, "threadwork.sqlite"));
   bootstrap(db, env);
+  const credentialStore = createCredentialStore({ db, dataDir });
   const app = express();
   app.disable("x-powered-by");
   app.use((req, res, next) => {
@@ -364,6 +366,7 @@ export function createApp({
   });
   const orchestration = installOrchestration({
     githubFetch,
+    credentialStore,
     workQueue,
     app,
     db,
@@ -1175,7 +1178,7 @@ export function createApp({
         .json({ error: "Worker lease expired; heartbeat before continuing" });
     next();
   });
-  const activity = installActivity({ app, db, admin, env });
+  const activity = installActivity({ app, db, admin, env, credentialStore });
   app.get("/api/worker/inbox", (req, res) =>
     res.json(
       db
@@ -1206,7 +1209,12 @@ export function createApp({
       .parse(req.body);
     db.prepare(
       "INSERT INTO agent_logs(agent_id,level,message,created_at) VALUES(?,?,?,?)",
-    ).run(req.user.id, input.level, input.message, now());
+    ).run(
+      req.user.id,
+      input.level,
+      credentialStore.redact(input.message),
+      now(),
+    );
     db.prepare(
       "DELETE FROM agent_logs WHERE agent_id=? AND id NOT IN(SELECT id FROM agent_logs WHERE agent_id=? ORDER BY id DESC LIMIT 200)",
     ).run(req.user.id, req.user.id);

@@ -36,7 +36,7 @@ test("search index upgrades existing content atomically, tracks writes/deletes a
     const before = db.prepare("SELECT * FROM replies").all();
     db.close();
     db = openDatabase(path);
-    assert.equal(db.prepare("PRAGMA user_version").get().user_version, 10);
+    assert.equal(db.prepare("PRAGMA user_version").get().user_version, 11);
     assert.deepEqual(db.prepare("SELECT * FROM replies").all(), before);
     for (const q of [
       "abc",
@@ -140,7 +140,7 @@ test("search index upgrades existing content atomically, tracks writes/deletes a
     );
     db.close();
     db = openDatabase(path);
-    assert.equal(db.prepare("PRAGMA user_version").get().user_version, 10);
+    assert.equal(db.prepare("PRAGMA user_version").get().user_version, 11);
     db.exec(
       "INSERT INTO search_replies(search_replies,rank) VALUES('integrity-check',1)",
     );

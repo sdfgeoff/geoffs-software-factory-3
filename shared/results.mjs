@@ -194,7 +194,15 @@ export const repositoryResult = obj({
     github_owner: ns,
     github_repo: ns,
     github_token_configured: z.boolean(),
+    git_credential_id: ni,
+    github_credential_id: ni,
   }),
+});
+export const repositoryCredentialResult = obj({
+  id,
+  name: s,
+  created_at: s,
+  updated_at: s,
 });
 const capabilities = obj({ user_id: id, can_work: flag, can_review: flag });
 const agent = obj({
@@ -395,6 +403,7 @@ export function httpResultContract(method, path) {
       "/api/work-preferences": preferencesResult,
       "/api/orchestration": orchestrationResult,
       "/api/repositories": z.array(repositoryResult),
+      "/api/admin/repository-credentials": z.array(repositoryCredentialResult),
       "/api/branches": z.array(branchResult),
       "/api/threads": z.union([z.array(threadResult), threadPageResult]),
       "/api/search": searchResult,
@@ -422,6 +431,7 @@ export function httpResultContract(method, path) {
       "/api/notification-schedules": scheduleResult,
       "/api/inbox/read": ok,
       "/api/repositories": repositoryResult,
+      "/api/admin/repository-credentials": repositoryCredentialResult,
     };
     if (direct[path]) return direct[path];
     if (/^\/api\/repositories\/\d+\/branches$/.test(path)) return branchResult;
@@ -442,12 +452,15 @@ export function httpResultContract(method, path) {
       return workChange;
   }
   if (method === "PATCH") {
+    if (/^\/api\/admin\/repository-credentials\/\d+$/.test(path))
+      return repositoryCredentialResult;
     if (/^\/api\/repositories\/\d+$/.test(path)) return repositoryResult;
     if (/^\/api\/threads\/\d+$/.test(path)) return threadResult;
     if (/^\/api\/channels\/\d+$/.test(path)) return channelResult;
     if (/^\/api\/replies\/\d+$/.test(path)) return ok;
   }
   if (method === "DELETE") {
+    if (/^\/api\/admin\/repository-credentials\/\d+$/.test(path)) return ok;
     if (/^\/api\/notification-schedules\/\d+$/.test(path))
       return scheduleResult;
     if (/^\/api\/branches\/\d+\/dependencies\/\d+$/.test(path))

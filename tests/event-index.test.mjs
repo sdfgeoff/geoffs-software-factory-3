@@ -51,7 +51,7 @@ for (const version of [6, 7])
       db = null;
       for (let n = 0; n < 2; n++) {
         db = openDatabase(path);
-        assert.equal(db.prepare("PRAGMA user_version").get().user_version, 10);
+        assert.equal(db.prepare("PRAGMA user_version").get().user_version, 11);
         assert.deepEqual(
           db.prepare("SELECT * FROM events ORDER BY id").all(),
           events,

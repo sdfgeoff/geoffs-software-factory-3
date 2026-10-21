@@ -43,7 +43,7 @@ test("schedule migration upgrades schema 2 and preserves opening attachments and
         VALUES('opening',1,'hello.png','image/png',42,'stamp',1);`);
     db.close();
     db = openDatabase(path);
-    assert.equal(db.prepare("PRAGMA user_version").get().user_version, 10);
+    assert.equal(db.prepare("PRAGMA user_version").get().user_version, 11);
     assert.equal(
       db.prepare("SELECT thread_id FROM attachments WHERE id='opening'").get()
         .thread_id,

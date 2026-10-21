@@ -4568,3 +4568,72 @@ code {
 .repository-merge-mode {
   overflow-wrap: anywhere;
 }
+.repository-credential-field {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 12px;
+  min-width: 0;
+  margin: 0;
+  display: grid;
+  gap: 10px;
+}
+.repository-credential-field > .button {
+  justify-self: start;
+}
+.repository-credential-field label {
+  min-width: 0;
+}
+.repository-credential-field select,
+.repository-credential-field input {
+  min-width: 0;
+  width: 100%;
+}
+.credential-inline-create {
+  padding-top: 8px;
+  display: grid;
+  gap: 12px;
+  border-top: 1px solid var(--line);
+  min-width: 0;
+}
+.credential-inline-create .button {
+  justify-self: start;
+}
+.credential-inline-create small {
+  font-size: 11px;
+  line-height: 1.6;
+}
+.repository-token-row {
+  border-top: 1px solid var(--line);
+  padding-top: 15px;
+  margin-top: 18px;
+}
+.repository-token-heading {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.repository-token-heading > div {
+  flex: 1;
+  min-width: 120px;
+  overflow-wrap: anywhere;
+}
+.repository-token-heading strong,
+.repository-token-heading small {
+  display: block;
+}
+.repository-token-heading strong {
+  font-size: 13px;
+}
+.repository-token-heading small {
+  font-size: 10px;
+  color: var(--muted);
+  margin-top: 6px;
+}
+.repository-token-editor {
+  max-width: 650px;
+}
+.legacy-credential-field {
+  padding-top: 5px;
+}

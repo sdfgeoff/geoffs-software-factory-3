@@ -6,7 +6,7 @@ const repoSegment = /^[A-Za-z0-9_.-]{1,100}$/;
 const fail = (status, message) => {
   throw Object.assign(new Error(message), { status });
 };
-export function validateGithubRepository(repo, env) {
+export function validateGithubRepository(repo, env, resolveCredential) {
   if (repo.merge_mode !== "pull_request") return;
   if (
     repo.pr_provider !== "github" ||
@@ -50,13 +50,26 @@ export function validateGithubRepository(repo, env) {
     name.toLowerCase() !== repo.github_repo.toLowerCase()
   )
     fail(400, "GitHub configuration must match the Git repository URL");
-  if (!repo.github_token_env || !env[repo.github_token_env])
+  if (
+    !(repo.github_credential_id != null
+      ? resolveCredential?.(repo.github_credential_id)
+      : repo.github_token_env && env[repo.github_token_env])
+  )
     fail(503, "GitHub API credential is not configured on the server");
 }
-export function githubClient(repo, env, fetchImpl = fetch, shutdownSignal) {
+export function githubClient(
+  repo,
+  env,
+  fetchImpl = fetch,
+  shutdownSignal,
+  resolveCredential,
+) {
   const path = `/repos/${encodeURIComponent(repo.github_owner)}/${encodeURIComponent(repo.github_repo)}`;
   async function request(suffix, { method = "GET", body } = {}) {
-    const credential = env[repo.github_token_env];
+    const credential =
+      repo.github_credential_id != null
+        ? resolveCredential?.(repo.github_credential_id)
+        : env[repo.github_token_env];
     if (!credential)
       fail(503, "GitHub API credential is not configured on the server");
     let response;

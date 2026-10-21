@@ -135,6 +135,16 @@ test(
       await page
         .getByRole("button", { name: "Register repository", exact: true })
         .click();
+      await page
+        .locator(".orchestration-card")
+        .filter({
+          has: page.getByRole("heading", {
+            name: "Register repository",
+            exact: true,
+          }),
+        })
+        .getByLabel("Git token", { exact: true })
+        .selectOption("legacy");
       await expect(
         page.getByLabel("Server credential environment variable"),
       ).toBeVisible();

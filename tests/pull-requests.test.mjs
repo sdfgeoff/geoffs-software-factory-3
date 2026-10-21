@@ -602,7 +602,7 @@ test("schema9 migration defaults existing repositories to direct and preserves G
   db.close();
   db = openDatabase(path);
   try {
-    assert.equal(db.prepare("PRAGMA user_version").get().user_version, 10);
+    assert.equal(db.prepare("PRAGMA user_version").get().user_version, 11);
     const r = db.prepare("SELECT * FROM repositories").get();
     assert.equal(r.merge_mode, "direct");
     assert.equal(r.github_token_env, null);

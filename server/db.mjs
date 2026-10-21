@@ -120,6 +120,22 @@ export function openDatabase(path) {
         "UPDATE branch_pull_requests SET intent_id=lower(hex(randomblob(16))) WHERE intent_id IS NULL",
       );
     }
+    db.exec(
+      `CREATE TABLE IF NOT EXISTS repository_credentials(id INTEGER PRIMARY KEY AUTOINCREMENT,name TEXT NOT NULL UNIQUE,encrypted_value TEXT NOT NULL,created_at TEXT NOT NULL,updated_at TEXT NOT NULL);`,
+    );
+    const credentialColumns = new Set(
+      db
+        .prepare("PRAGMA table_info(repositories)")
+        .all()
+        .map((c) => c.name),
+    );
+    for (const name of ["git_credential_id", "github_credential_id"])
+      if (!credentialColumns.has(name))
+        db.exec(
+          `ALTER TABLE repositories ADD COLUMN ${name} INTEGER REFERENCES repository_credentials(id)`,
+        );
+    if (db.prepare("PRAGMA user_version").get().user_version < 11)
+      db.exec("PRAGMA user_version=11");
     if (db.prepare("PRAGMA user_version").get().user_version < 10)
       db.exec("PRAGMA user_version=10");
     if (db.prepare("PRAGMA user_version").get().user_version < 8)

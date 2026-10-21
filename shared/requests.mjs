@@ -87,15 +87,48 @@ export function requestContracts({ coerce = true } = {}) {
     github_owner: githubOwner.nullable(),
     github_repo: githubRepo.nullable(),
     github_token_env: envName.nullable(),
+    git_credential_id: id.nullable(),
+    github_credential_id: id.nullable(),
+    credential_env: envName.nullable(),
   };
   return {
     empty: z.object({}).strict(),
+    repositoryCredentialCreate: z
+      .object({
+        name: z.string().trim().min(1).max(100),
+        value: z
+          .string()
+          .min(8)
+          .max(16384)
+          .refine(
+            (value) => !/[\r\n\0]/.test(value),
+            "Token cannot contain line breaks",
+          ),
+      })
+      .strict(),
+    repositoryCredentialUpdate: z
+      .object({
+        name: z.string().trim().min(1).max(100).optional(),
+        value: z
+          .string()
+          .min(8)
+          .max(16384)
+          .refine(
+            (value) => !/[\r\n\0]/.test(value),
+            "Token cannot contain line breaks",
+          )
+          .optional(),
+      })
+      .strict()
+      .refine(
+        (value) => Object.keys(value).length > 0,
+        "Provide a name or replacement token",
+      ),
     repositoryCreate: z
       .object({
         name: z.string().trim().min(1).max(100),
         url: z.string().trim().min(1).max(2000),
         main_branch: branchName.default("main"),
-        credential_env: envName.optional(),
         ...repositoryPolicy,
         require_human: repositoryPolicy.require_human.default(false),
         merge_mode: repositoryPolicy.merge_mode.default("direct"),
@@ -103,6 +136,9 @@ export function requestContracts({ coerce = true } = {}) {
         github_owner: repositoryPolicy.github_owner.optional(),
         github_repo: repositoryPolicy.github_repo.optional(),
         github_token_env: repositoryPolicy.github_token_env.optional(),
+        git_credential_id: repositoryPolicy.git_credential_id.optional(),
+        github_credential_id: repositoryPolicy.github_credential_id.optional(),
+        credential_env: repositoryPolicy.credential_env.optional(),
       })
       .strict(),
     repositoryUpdate: z

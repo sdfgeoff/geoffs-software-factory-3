@@ -1,6 +1,12 @@
 import React, { useEffect, useState } from "react";
 import { GitBranch, RefreshCw, Plus, ExternalLink } from "lucide-react";
 import { QueueAction, useWorkQueue } from "./WorkQueue.jsx";
+import {
+  useRepositoryCredentials,
+  RepositoryCredentialField,
+  RepositoryCredentialsPanel,
+  credentialSelectionFields,
+} from "./RepositoryCredentials.jsx";
 
 function useOrchestration(api, refreshKey) {
   const [state, setState] = useState(null);
@@ -75,19 +81,22 @@ function mergePolicyFields(fields) {
   const mode = fields.get("merge_mode") || "direct";
   return {
     merge_mode: mode,
+    ...credentialSelectionFields(fields, "github"),
     ...(mode === "pull_request"
       ? {
           pr_provider: "github",
           github_owner: fields.get("github_owner"),
           github_repo: fields.get("github_repo"),
-          ...(fields.get("github_token_env")
-            ? { github_token_env: fields.get("github_token_env") }
-            : {}),
         }
       : {}),
   };
 }
-function MergeModeFields({ repository }) {
+function MergeModeFields({
+  repository,
+  api,
+  credentials,
+  onCredentialCreated,
+}) {
   const [mode, setMode] = useState(repository?.merge_mode || "direct");
   return (
     <>
@@ -103,6 +112,20 @@ function MergeModeFields({ repository }) {
           <option value="pull_request">GitHub pull request</option>
         </select>
       </label>
+      {mode === "direct" &&
+        (repository?.github_credential_id ||
+          repository?.github_token_configured) && (
+          <details className="context-help">
+            <summary>GitHub access retained from pull request mode</summary>
+            <RepositoryCredentialField
+              api={api}
+              kind="github"
+              repository={repository}
+              credentials={credentials}
+              onCreated={onCredentialCreated}
+            />
+          </details>
+        )}
       {mode === "pull_request" && (
         <>
           <label>
@@ -125,21 +148,14 @@ function MergeModeFields({ repository }) {
               placeholder="project"
             />
           </label>
-          <label>
-            GitHub token environment variable
-            <input
-              name="github_token_env"
-              pattern="[A-Z_][A-Z0-9_]*"
-              defaultValue=""
-              required={!repository?.github_token_configured}
-              placeholder="PROJECT_GITHUB_TOKEN"
-            />
-            <small>
-              {repository?.github_token_configured
-                ? "A token is configured. Leave blank to keep its server environment reference."
-                : "Enter the environment variable name only. Configure the token on the server."}
-            </small>
-          </label>
+          <RepositoryCredentialField
+            api={api}
+            kind="github"
+            repository={repository}
+            credentials={credentials}
+            onCreated={onCredentialCreated}
+            required
+          />
           <p className="muted">
             Board approval permits opening or updating a pull request. A human
             merges it on GitHub.
@@ -158,6 +174,7 @@ export function RepositoriesPage({ api, data, refreshKey, notify }) {
   const { state, error, refresh } = useOrchestration(api, refreshKey);
   const [registering, setRegistering] = useState(false);
   const [credential, setCredential] = useState(null);
+  const savedCredentials = useRepositoryCredentials(api, !!data.user.admin);
   const done = () => {
     refresh();
     notify("Repository registered");
@@ -206,9 +223,7 @@ export function RepositoriesPage({ api, data, refreshKey, notify }) {
                 name: f.get("name"),
                 url: f.get("url"),
                 main_branch: f.get("main_branch"),
-                ...(f.get("credential_env")
-                  ? { credential_env: f.get("credential_env") }
-                  : {}),
+                ...credentialSelectionFields(f, "git"),
                 require_human: f.get("require_human") === "on",
                 ...mergePolicyFields(f),
               })}
@@ -229,21 +244,32 @@ export function RepositoriesPage({ api, data, refreshKey, notify }) {
                 Main branch
                 <input name="main_branch" required defaultValue="main" />
               </label>
-              <label>
-                Server credential environment variable
-                <input name="credential_env" placeholder="PROJECT_GIT_TOKEN" />
-                <small>
-                  Enter the variable name only. Configure the secret on the
-                  server.
-                </small>
-              </label>
-              <MergeModeFields />
+              <RepositoryCredentialField
+                api={api}
+                kind="git"
+                credentials={savedCredentials.credentials}
+                onCreated={savedCredentials.upsert}
+              />
+              <MergeModeFields
+                api={api}
+                credentials={savedCredentials.credentials}
+                onCredentialCreated={savedCredentials.upsert}
+              />
               <label className="orchestration-checkbox">
                 <input name="require_human" type="checkbox" />
                 Require human review before merging
               </label>
             </ActionForm>
           </section>
+        )}
+        {data.user.admin && (
+          <RepositoryCredentialsPanel
+            api={api}
+            credentials={savedCredentials.credentials}
+            error={savedCredentials.error}
+            onSaved={savedCredentials.upsert}
+            onRemoved={savedCredentials.remove}
+          />
         )}
         {!state && !error && <p className="muted">Loading repositories…</p>}
         {state?.repositories?.length === 0 && (
@@ -275,12 +301,13 @@ export function RepositoriesPage({ api, data, refreshKey, notify }) {
             </p>
             {data.user.admin && (
               <ActionForm
-                key={`policy:${repo.id}:${repo.require_human}:${repo.merge_mode}:${repo.github_owner}:${repo.github_repo}:${repo.github_token_configured}`}
+                key={`policy:${repo.id}:${repo.require_human}:${repo.merge_mode}:${repo.github_owner}:${repo.github_repo}:${repo.github_token_configured}:${repo.git_credential_id}:${repo.github_credential_id}`}
                 api={api}
                 path={`/repositories/${repo.id}`}
                 method="PATCH"
                 body={(f) => ({
                   require_human: f.get("require_human") === "on",
+                  ...credentialSelectionFields(f, "git"),
                   ...mergePolicyFields(f),
                 })}
                 label="Save approval policy"
@@ -289,7 +316,20 @@ export function RepositoriesPage({ api, data, refreshKey, notify }) {
                   notify("Repository policy updated");
                 }}
               >
-                <MergeModeFields repository={repo} />
+                <input type="hidden" name="existing_repository" value="true" />
+                <RepositoryCredentialField
+                  api={api}
+                  kind="git"
+                  repository={repo}
+                  credentials={savedCredentials.credentials}
+                  onCreated={savedCredentials.upsert}
+                />
+                <MergeModeFields
+                  api={api}
+                  repository={repo}
+                  credentials={savedCredentials.credentials}
+                  onCredentialCreated={savedCredentials.upsert}
+                />
                 <label className="orchestration-checkbox">
                   <input
                     type="checkbox"

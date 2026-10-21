@@ -60,9 +60,30 @@ test("repository policy requests preserve existing direct defaults and validate 
     { github_owner: "../team" },
     { github_repo: "project/../../other" },
     { github_token_env: "paste-a-secret" },
-    { credential_env: "OTHER" },
+    { credential_env: "not-an-environment-reference" },
+    { git_credential_id: 0 },
+    { github_credential_id: -1 },
   ])
     assert.equal(httpRequests.repositoryUpdate.safeParse(input).success, false);
+  const storedCredentials = {
+    git_credential_id: 1,
+    github_credential_id: 2,
+    credential_env: null,
+    github_token_env: null,
+  };
+  assert.deepEqual(
+    httpRequests.repositoryUpdate.parse(storedCredentials),
+    storedCredentials,
+  );
+  assert.deepEqual(
+    mcpRequests.repositoryUpdate.parse(storedCredentials),
+    storedCredentials,
+  );
+  assert.equal(
+    httpRequests.repositoryUpdate.parse({ credential_env: "OTHER" })
+      .credential_env,
+    "OTHER",
+  );
   assert.deepEqual(
     httpRequests.repositoryUpdate.parse({ github_token_env: null }),
     { github_token_env: null },
