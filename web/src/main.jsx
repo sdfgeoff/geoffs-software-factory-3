@@ -2419,6 +2419,12 @@ function WorkViewSwitch({ view, setView }) {
   const change = (next) => {
     setView(next);
     localStorage.setItem("tw_view", next);
+    // Channel views move this control between the compact and full headers.
+    requestAnimationFrame(() => {
+      document
+        .querySelector('.origin-view .view-switch button[aria-pressed="true"]')
+        ?.focus({ preventScroll: true });
+    });
   };
   return (
     <div className="view-switch" role="group" aria-label="Work view">

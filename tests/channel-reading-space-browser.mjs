@@ -249,12 +249,19 @@ for (const [width, height] of [
         await page
           .getByRole("button", { name: "Hide channel controls" })
           .click();
-        await page.getByRole("button", { name: "Board", exact: true }).click();
+        const board = page.getByRole("button", { name: "Board", exact: true });
+        await board.focus();
+        await page.keyboard.press("Enter");
         await expect(page.locator(".board")).toBeVisible();
-        await page
-          .getByRole("button", { name: "Threads", exact: true })
-          .click();
+        await expect(board).toBeFocused();
+        const threads = page.getByRole("button", {
+          name: "Threads",
+          exact: true,
+        });
+        await threads.focus();
+        await page.keyboard.press("Enter");
         await expect(history).toBeVisible();
+        await expect(threads).toBeFocused();
         await page
           .getByRole("button", { name: "Search everywhere", exact: true })
           .click();
