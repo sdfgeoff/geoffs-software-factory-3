@@ -211,6 +211,7 @@ test(
       await page
         .getByRole("button", { name: "Older conversations", exact: true })
         .click();
+      await page.getByRole("button", { name: "Show channel controls" }).click();
       await page
         .getByPlaceholder("Search conversations…")
         .fill("Scale conversation 00001");

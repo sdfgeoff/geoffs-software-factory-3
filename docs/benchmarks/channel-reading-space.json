@@ -1,0 +1,38 @@
+[
+  {
+    "width": 1440,
+    "height": 900,
+    "before": {
+      "reading": 329,
+      "app": 900
+    },
+    "after": {
+      "reading": 726,
+      "app": 900
+    }
+  },
+  {
+    "width": 1440,
+    "height": 600,
+    "before": {
+      "reading": 114,
+      "app": 600
+    },
+    "after": {
+      "reading": 426,
+      "app": 600
+    }
+  },
+  {
+    "width": 390,
+    "height": 700,
+    "before": {
+      "reading": 99,
+      "app": 700
+    },
+    "after": {
+      "reading": 494,
+      "app": 700
+    }
+  }
+]

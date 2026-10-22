@@ -1,3 +1,4 @@
+import "./channel-reading-space-browser.mjs";
 import "./repository-workspace-browser.mjs";
 import "./reading-space-browser.mjs";
 import "./repository-credentials-browser.mjs";
@@ -135,6 +136,7 @@ test(
       await page
         .getByRole("button", { name: "product-design", exact: true })
         .click();
+      await page.getByRole("button", { name: "Show channel controls" }).click();
       await page
         .getByRole("button", { name: "Subscribe", exact: true })
         .click();

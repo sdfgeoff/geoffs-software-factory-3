@@ -613,6 +613,7 @@ function App() {
     [search, setSearch] = useState(entry.query),
     [assignee, setAssignee] = useState(entry.assignee),
     [statusFilter, setStatusFilter] = useState(entry.statusFilter),
+    [channelControlsOpen, setChannelControlsOpen] = useState(false),
     [selectedId, setSelectedId] = useState(() => entry.threadId),
     [searchOpen, setSearchOpen] = useState(false),
     [globalSearchQuery, setGlobalSearchQuery] = useState(""),
@@ -705,12 +706,15 @@ function App() {
         window.scrollTo(0, next.scrollY || 0);
         if (
           originFocus.current?.isConnected &&
+          originFocus.current.getClientRects().length &&
           !originFocus.current.closest("[hidden]")
         )
           originFocus.current.focus({ preventScroll: true });
         else
-          document
-            .querySelector(".origin-view button, .topbar button")
+          [...document.querySelectorAll(".origin-view button, .topbar button")]
+            .find(
+              (button) => !button.disabled && button.getClientRects().length,
+            )
             ?.focus({ preventScroll: true });
       });
   };
@@ -766,6 +770,7 @@ function App() {
   const toastTimer = useRef();
   const searchNavigation = useRef(0);
   const readingPositions = useRef(new Map());
+  useEffect(() => setChannelControlsOpen(false), [channelId]);
   const channelPositions = useRef(new Map());
   const composerDrafts = useRef(new Map());
   useEffect(() => {
@@ -1177,6 +1182,7 @@ function App() {
       </div>
     );
   const channel = data.channels.find((c) => c.id === channelId);
+  const channelReading = page === "work" && channel && view === "threads";
   const listLoading = loading || loadedListKey !== `${listKey}:${windowKey}`;
   const shown = (
     loadedListKey === `${listKey}:${windowKey}` ? threads : []
@@ -1334,7 +1340,7 @@ function App() {
       <main
         className={`main ${selectedId ? "conversation-main" : page === "work" && channel && view === "threads" ? "channel-workspace" : ""}`}
       >
-        <header className="topbar" hidden={!!selectedId}>
+        <header className="topbar" hidden={!!selectedId || !!channelReading}>
           <div className="breadcrumb">
             <button
               className="icon-button mobile-toggle"
@@ -1370,145 +1376,195 @@ function App() {
               <>
                 {page === "work" && (
                   <>
-                    <section className="page-heading">
-                      <div>
-                        <h1>
-                          {channel ? (
-                            <>
-                              <span className="heading-hash">#</span>
-                              {channel.name}
-                              {!!channel.archived && (
-                                <span className="pill">Archived</span>
-                              )}
-                            </>
-                          ) : (
-                            "All work"
+                    {channelReading && (
+                      <header className="channel-reading-header">
+                        <button
+                          className="icon-button mobile-toggle"
+                          aria-label="Open navigation"
+                          onClick={() => setMobile(true)}
+                        >
+                          <Menu size={20} />
+                        </button>
+                        <h1 title={channel.name}>
+                          #{channel.name}
+                          {!!channel.archived && (
+                            <span className="pill">Archived</span>
                           )}
                           <span className="heading-count">
                             {threadPage.total}
                           </span>
                         </h1>
-                        {channel?.description && <p>{channel.description}</p>}
-                      </div>
-                      <div className="heading-actions">
-                        {channel && (
-                          <>
-                            <button
-                              className={`button subtle ${channel.subscribed ? "subscribed" : ""}`}
-                              onClick={() =>
-                                act(
-                                  `/channels/${channel.id}/subscription`,
-                                  "PUT",
-                                  {
-                                    subscribed: !channel.subscribed,
-                                  },
-                                ).catch(() => {})
-                              }
+                        <WorkViewSwitch view={view} setView={setView} />
+                        <div className="channel-reading-actions">
+                          {!connected && (
+                            <span
+                              className="connection disconnected"
+                              role="status"
                             >
-                              {channel.subscribed ? (
-                                <Check size={16} />
-                              ) : (
-                                <Bell size={16} />
+                              <Wifi size={13} />
+                              Reconnecting
+                            </span>
+                          )}
+                          <button
+                            className="icon-button"
+                            aria-label="Search everywhere"
+                            title="Search everywhere (Ctrl/⌘ K)"
+                            onClick={() => setSearchOpen(true)}
+                          >
+                            <Search size={17} />
+                          </button>
+                          <button
+                            className="button"
+                            aria-label={
+                              channelControlsOpen
+                                ? "Hide channel controls"
+                                : "Show channel controls"
+                            }
+                            aria-expanded={channelControlsOpen}
+                            aria-controls="channel-overview-controls"
+                            aria-describedby={
+                              query || assignee || statusFilter
+                                ? "channel-filter-summary"
+                                : undefined
+                            }
+                            onClick={() => setChannelControlsOpen((v) => !v)}
+                          >
+                            <SlidersHorizontal size={16} />
+                            <span>
+                              Controls
+                              {(query || assignee || statusFilter) && (
+                                <span id="channel-filter-summary">
+                                  {" "}
+                                  · filtered
+                                </span>
                               )}
-                              <span>
-                                {channel.subscribed
-                                  ? "Subscribed"
-                                  : "Subscribe"}
-                              </span>
-                            </button>
-                            <button
-                              className="icon-button"
-                              aria-label="Edit channel"
-                              onClick={() =>
-                                setModal({ type: "channel", channel })
-                              }
+                            </span>
+                          </button>
+                        </div>
+                      </header>
+                    )}
+                    <div
+                      id="channel-overview-controls"
+                      className={
+                        channelReading ? "channel-overview-controls" : ""
+                      }
+                      hidden={!!channelReading && !channelControlsOpen}
+                    >
+                      <section className="page-heading">
+                        <div>
+                          <h1>
+                            {channel ? (
+                              <>
+                                <span className="heading-hash">#</span>
+                                {channel.name}
+                                {!!channel.archived && (
+                                  <span className="pill">Archived</span>
+                                )}
+                              </>
+                            ) : (
+                              "All work"
+                            )}
+                            <span className="heading-count">
+                              {threadPage.total}
+                            </span>
+                          </h1>
+                          {channel?.description && <p>{channel.description}</p>}
+                        </div>
+                        <div className="heading-actions">
+                          {channel && (
+                            <>
+                              <button
+                                className={`button subtle ${channel.subscribed ? "subscribed" : ""}`}
+                                onClick={() =>
+                                  act(
+                                    `/channels/${channel.id}/subscription`,
+                                    "PUT",
+                                    {
+                                      subscribed: !channel.subscribed,
+                                    },
+                                  ).catch(() => {})
+                                }
+                              >
+                                {channel.subscribed ? (
+                                  <Check size={16} />
+                                ) : (
+                                  <Bell size={16} />
+                                )}
+                                <span>
+                                  {channel.subscribed
+                                    ? "Subscribed"
+                                    : "Subscribe"}
+                                </span>
+                              </button>
+                              <button
+                                className="icon-button"
+                                aria-label="Edit channel"
+                                onClick={() =>
+                                  setModal({ type: "channel", channel })
+                                }
+                              >
+                                <MoreHorizontal size={20} />
+                              </button>
+                            </>
+                          )}
+                          <button
+                            className="button primary"
+                            disabled={!!channel?.archived}
+                            onClick={startThread}
+                          >
+                            <Plus size={17} />
+                            New thread
+                          </button>
+                        </div>
+                      </section>
+                      <section className="work-toolbar">
+                        {!channelReading && (
+                          <WorkViewSwitch view={view} setView={setView} />
+                        )}
+                        <div className="toolbar-controls">
+                          <label className="search">
+                            <Search size={16} />
+                            <input
+                              id="conversation-search"
+                              aria-label="Filter conversations"
+                              placeholder="Search conversations…"
+                              value={query}
+                              onChange={(e) => setQuery(e.target.value)}
+                            />
+                          </label>
+                          <label className="filter-select">
+                            <SlidersHorizontal size={15} />
+                            <select
+                              aria-label="Filter assignee"
+                              value={assignee}
+                              onChange={(e) => setAssignee(e.target.value)}
                             >
-                              <MoreHorizontal size={20} />
-                            </button>
-                          </>
-                        )}
-                        <button
-                          className="button primary"
-                          disabled={!!channel?.archived}
-                          onClick={startThread}
-                        >
-                          <Plus size={17} />
-                          New thread
-                        </button>
-                      </div>
-                    </section>
-                    <section className="work-toolbar">
-                      <div
-                        className="view-switch"
-                        role="group"
-                        aria-label="Work view"
-                      >
-                        <button
-                          className={view === "threads" ? "selected" : ""}
-                          aria-pressed={view === "threads"}
-                          onClick={() => {
-                            setView("threads");
-                            localStorage.setItem("tw_view", "threads");
-                          }}
-                        >
-                          <MessageSquare size={16} />
-                          Threads
-                        </button>
-                        <button
-                          className={view === "board" ? "selected" : ""}
-                          aria-pressed={view === "board"}
-                          onClick={() => {
-                            setView("board");
-                            localStorage.setItem("tw_view", "board");
-                          }}
-                        >
-                          <Columns3 size={16} />
-                          Board
-                        </button>
-                      </div>
-                      <div className="toolbar-controls">
-                        <label className="search">
-                          <Search size={16} />
-                          <input
-                            id="conversation-search"
-                            aria-label="Filter conversations"
-                            placeholder="Search conversations…"
-                            value={query}
-                            onChange={(e) => setQuery(e.target.value)}
-                          />
-                        </label>
-                        <label className="filter-select">
-                          <SlidersHorizontal size={15} />
-                          <select
-                            aria-label="Filter assignee"
-                            value={assignee}
-                            onChange={(e) => setAssignee(e.target.value)}
-                          >
-                            <option value="">Everyone</option>
-                            {data.users.map((u) => (
-                              <option key={u.id} value={u.id}>
-                                {u.name}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-                        {view === "threads" && (
-                          <select
-                            aria-label="Filter status"
-                            className="status-filter"
-                            value={statusFilter}
-                            onChange={(e) => setStatusFilter(e.target.value)}
-                          >
-                            <option value="">All statuses</option>
-                            {data.statuses.map((s) => (
-                              <option key={s.id} value={s.id}>
-                                {s.name}
-                              </option>
-                            ))}
-                          </select>
-                        )}
-                      </div>
-                    </section>
+                              <option value="">Everyone</option>
+                              {data.users.map((u) => (
+                                <option key={u.id} value={u.id}>
+                                  {u.name}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          {view === "threads" && (
+                            <select
+                              aria-label="Filter status"
+                              className="status-filter"
+                              value={statusFilter}
+                              onChange={(e) => setStatusFilter(e.target.value)}
+                            >
+                              <option value="">All statuses</option>
+                              {data.statuses.map((s) => (
+                                <option key={s.id} value={s.id}>
+                                  {s.name}
+                                </option>
+                              ))}
+                            </select>
+                          )}
+                        </div>
+                      </section>
+                    </div>
                     {view === "threads" && !channel && (
                       <ReplyComposer
                         creation
@@ -2359,33 +2415,75 @@ function SettingsPage({ data, act, setModal, notify }) {
     </>
   );
 }
+function WorkViewSwitch({ view, setView }) {
+  const change = (next) => {
+    setView(next);
+    localStorage.setItem("tw_view", next);
+  };
+  return (
+    <div className="view-switch" role="group" aria-label="Work view">
+      <button
+        className={view === "threads" ? "selected" : ""}
+        aria-pressed={view === "threads"}
+        onClick={() => change("threads")}
+      >
+        <MessageSquare size={16} />
+        Threads
+      </button>
+      <button
+        className={view === "board" ? "selected" : ""}
+        aria-pressed={view === "board"}
+        onClick={() => change("board")}
+      >
+        <Columns3 size={16} />
+        Board
+      </button>
+    </div>
+  );
+}
 function ThreadPagination({ page, latest, loading, changeWindow }) {
   return (
-    <nav className="thread-pagination" aria-label="Conversation pages">
+    <nav
+      className="thread-pagination"
+      aria-label="Conversation pages"
+      aria-busy={loading}
+    >
       <button
+        aria-label="Older conversations"
         className="button subtle"
         disabled={loading || !page.older}
         onClick={() => changeWindow({ before: page.older })}
       >
-        Older conversations
+        <span className="page-label-long">Older conversations</span>
+        <span className="page-label-short" aria-hidden="true">
+          Older
+        </span>
       </button>
       <span role="status">
         {page.items?.length || 0} of {page.total} conversations
       </span>
       <button
+        aria-label="Newer conversations"
         className="button subtle"
         disabled={loading || !page.newer}
         onClick={() => changeWindow({ after: page.newer })}
       >
-        Newer conversations
+        <span className="page-label-long">Newer conversations</span>
+        <span className="page-label-short" aria-hidden="true">
+          Newer
+        </span>
       </button>
       {latest && (
         <button
+          aria-label="Latest conversations"
           className="button subtle"
           disabled={loading}
           onClick={() => changeWindow({})}
         >
-          Latest conversations
+          <span className="page-label-long">Latest conversations</span>
+          <span className="page-label-short" aria-hidden="true">
+            Latest
+          </span>
         </button>
       )}
     </nav>
@@ -2512,10 +2610,7 @@ function ChannelStream({
   }, []);
   return (
     <section className="channel-stream" aria-label={`Channel ${channel.name}`}>
-      <div className="channel-stream-meta">
-        Oldest to newest · {loading ? "Updating…" : "50 conversations per page"}
-        {pagination}
-      </div>
+      <div className="channel-stream-meta">{pagination}</div>
       <div
         className="channel-history"
         ref={history}
@@ -2617,6 +2712,7 @@ function ChannelStream({
           </p>
         ) : (
           <ReplyComposer
+            compact
             creation
             data={data}
             channelId={channel.id}
@@ -3441,7 +3537,15 @@ function ReplyComposer({
               <button
                 type="button"
                 className="text-button reply-expand"
-                aria-label={expanded ? "Collapse reply" : "Expand reply"}
+                aria-label={
+                  expanded
+                    ? creation
+                      ? "Collapse message"
+                      : "Collapse reply"
+                    : creation
+                      ? "Expand message"
+                      : "Expand reply"
+                }
                 aria-expanded={expanded}
                 aria-controls={textareaId}
                 onClick={() => {

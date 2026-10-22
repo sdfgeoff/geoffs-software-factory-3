@@ -105,6 +105,9 @@ for (const width of [1440, 390])
           .getByRole("button", { name: "Threads", exact: true })
           .click();
         await expect(message).toHaveValue("Unsent channel draft");
+        await page
+          .getByRole("button", { name: "Expand message", exact: true })
+          .click();
         await page.getByText("Thread options", { exact: true }).click();
         await expect(
           page.getByRole("textbox", { name: "Title (optional)" }),
