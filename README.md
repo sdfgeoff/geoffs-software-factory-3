@@ -798,3 +798,19 @@ were consumed, active-claim suppression, opt-out, empty queues, declined-work
 cooldown and fresh post-merge wakes. Tests use a fake runtime without inference;
 actual model willingness to claim a suitable task is instructed rather than
 proved by this fixture. Docker Compose execution remains unavailable locally.
+
+### Repository workspace
+
+Repositories open as a searchable overview of collapsed summaries showing integration
+mode, main branch and active-branch counts. Open a repository to inspect its Git
+URLs, review policy and active branches. Admin settings are behind **Edit settings**;
+merged branches remain available through **Show merged branches**. **Git access**
+contains personal gateway credentials and, for admins, saved repository tokens.
+**Permissions** contains admin work/review controls. Switching these views or
+filtering the list preserves open repositories and unsaved mounted form values
+within the page; navigating away does not provide durable draft storage.
+
+Browser regression coverage includes keyboard disclosure, policy save failure and
+retry, view switching, filtering, merged history, existing token/PR workflows and
+390px layout. Screenshots use isolated illustrative data. These checks do not
+constitute user testing or a large-repository-count performance benchmark.

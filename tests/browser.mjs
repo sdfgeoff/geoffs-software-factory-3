@@ -1,3 +1,4 @@
+import "./repository-workspace-browser.mjs";
 import "./reading-space-browser.mjs";
 import "./repository-credentials-browser.mjs";
 import "./pull-request-browser.mjs";

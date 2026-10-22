@@ -1,5 +1,11 @@
 import React, { useEffect, useState } from "react";
-import { GitBranch, RefreshCw, Plus, ExternalLink } from "lucide-react";
+import {
+  GitBranch,
+  RefreshCw,
+  Plus,
+  ExternalLink,
+  ChevronDown,
+} from "lucide-react";
 import { QueueAction, useWorkQueue } from "./WorkQueue.jsx";
 import {
   useRepositoryCredentials,
@@ -172,6 +178,8 @@ function mergeModeDescription(repository) {
 }
 export function RepositoriesPage({ api, data, refreshKey, notify }) {
   const { state, error, refresh } = useOrchestration(api, refreshKey);
+  const [view, setView] = useState("overview");
+  const [filter, setFilter] = useState("");
   const [registering, setRegistering] = useState(false);
   const [credential, setCredential] = useState(null);
   const savedCredentials = useRepositoryCredentials(api, !!data.user.admin);
@@ -180,27 +188,31 @@ export function RepositoriesPage({ api, data, refreshKey, notify }) {
     notify("Repository registered");
     setRegistering(false);
   };
+  const repositories = state?.repositories || [];
+  const matches = repositories.filter((repo) =>
+    `${repo.name} ${repo.url}`
+      .toLowerCase()
+      .includes(filter.trim().toLowerCase()),
+  );
   return (
     <>
       <section className="page-heading">
         <div>
           <h1>Repositories</h1>
-          <details className="context-help">
-            <summary>Review and merging</summary>
-            <p>
-              Review approves an exact commit; its owner requests integration.
-              Repository policy chooses a direct merge or a GitHub pull request.
-            </p>
-          </details>
+          <p className="muted">
+            Browse code and branches. Open a repository to see its details.
+          </p>
         </div>
         <div className="heading-actions">
           <button className="button subtle" onClick={refresh}>
             <RefreshCw size={15} />
             Refresh
           </button>
-          {data.user.admin && (
+          {data.user.admin && view === "overview" && (
             <button
               className="button primary"
+              aria-expanded={registering}
+              aria-controls="repository-registration"
               onClick={() => setRegistering((v) => !v)}
             >
               <Plus size={16} />
@@ -209,233 +221,407 @@ export function RepositoriesPage({ api, data, refreshKey, notify }) {
           )}
         </div>
       </section>
-      <div className="orchestration-content">
-        <ErrorMessage>{error}</ErrorMessage>
-        {registering && (
-          <section className="orchestration-card">
-            <h2>Register repository</h2>
-            <ActionForm
-              api={api}
-              path="/repositories"
-              onDone={done}
-              label="Register repository"
-              body={(f) => ({
-                name: f.get("name"),
-                url: f.get("url"),
-                main_branch: f.get("main_branch"),
-                ...credentialSelectionFields(f, "git"),
-                require_human: f.get("require_human") === "on",
-                ...mergePolicyFields(f),
-              })}
+      <div className="orchestration-content repository-workspace">
+        <div
+          className="repository-navigation"
+          role="group"
+          aria-label="Repository sections"
+        >
+          {[
+            ["overview", "Overview"],
+            ["access", "Git access"],
+            ...(data.user.admin ? [["permissions", "Permissions"]] : []),
+          ].map(([key, label]) => (
+            <button
+              key={key}
+              className="button subtle"
+              aria-pressed={view === key}
+              onClick={() => setView(key)}
             >
-              <label>
-                Name
-                <input name="name" required maxLength={100} />
-              </label>
-              <label>
-                Git URL
+              {label}
+            </button>
+          ))}
+        </div>
+        <ErrorMessage>{error}</ErrorMessage>
+        <div className="repository-view" hidden={view !== "overview"}>
+          <div id="repository-registration" hidden={!registering}>
+            {" "}
+            {registering && (
+              <section className="orchestration-card">
+                <h2>Register repository</h2>
+                <ActionForm
+                  api={api}
+                  path="/repositories"
+                  onDone={done}
+                  label="Register repository"
+                  body={(f) => ({
+                    name: f.get("name"),
+                    url: f.get("url"),
+                    main_branch: f.get("main_branch"),
+                    ...credentialSelectionFields(f, "git"),
+                    require_human: f.get("require_human") === "on",
+                    ...mergePolicyFields(f),
+                  })}
+                >
+                  <label>
+                    Name
+                    <input name="name" required maxLength={100} />
+                  </label>
+                  <label>
+                    Git URL
+                    <input
+                      name="url"
+                      required
+                      placeholder="git@git.example.com:team/project.git"
+                    />
+                  </label>
+                  <label>
+                    Main branch
+                    <input name="main_branch" required defaultValue="main" />
+                  </label>
+                  <RepositoryCredentialField
+                    api={api}
+                    kind="git"
+                    credentials={savedCredentials.credentials}
+                    onCreated={savedCredentials.upsert}
+                  />
+                  <MergeModeFields
+                    api={api}
+                    credentials={savedCredentials.credentials}
+                    onCredentialCreated={savedCredentials.upsert}
+                  />
+                  <label className="orchestration-checkbox">
+                    <input name="require_human" type="checkbox" />
+                    Require human review before merging
+                  </label>
+                </ActionForm>
+              </section>
+            )}
+          </div>
+          {!state && !error && <p className="muted">Loading repositories…</p>}
+          {repositories.length > 0 && (
+            <div className="repository-list-heading">
+              <h2>
+                Connected repositories{" "}
+                <span className="muted">{repositories.length}</span>
+              </h2>
+              <label className="repository-filter">
+                Find a repository
                 <input
-                  name="url"
-                  required
-                  placeholder="git@git.example.com:team/project.git"
+                  type="search"
+                  value={filter}
+                  onChange={(event) => setFilter(event.target.value)}
+                  placeholder="Name or Git URL"
                 />
               </label>
-              <label>
-                Main branch
-                <input name="main_branch" required defaultValue="main" />
-              </label>
+            </div>
+          )}
+          {state && repositories.length === 0 && (
+            <section className="orchestration-card">
+              <GitBranch size={25} />
+              <h2>No repositories yet</h2>
+              <p>
+                {data.user.admin
+                  ? "Register a repository to connect branches with tickets."
+                  : "An admin can register your team's repositories."}
+              </p>
+            </section>
+          )}
+          {repositories.length > 0 && matches.length === 0 && (
+            <p role="status">
+              No repositories match.{" "}
+              <button className="button subtle" onClick={() => setFilter("")}>
+                Clear search
+              </button>
+            </p>
+          )}
+          <div className="repository-list">
+            {repositories.map((repo) => (
+              <RepositoryCard
+                key={repo.id}
+                repository={repo}
+                hidden={!matches.includes(repo)}
+                branches={
+                  state.branches?.filter((b) => b.repository_id === repo.id) ||
+                  []
+                }
+                api={api}
+                admin={data.user.admin}
+                savedCredentials={savedCredentials}
+                refresh={refresh}
+                notify={notify}
+              />
+            ))}
+          </div>
+        </div>
+        <div className="repository-view" hidden={view !== "access"}>
+          <div className="repository-view-heading">
+            <h2>Git access</h2>
+            <p className="muted">
+              {data.user.admin
+                ? "Your gateway credentials and the team's saved repository tokens."
+                : "Create and revoke your own gateway credentials."}
+            </p>
+          </div>
+          <section className="orchestration-card">
+            <h2>Your Git access</h2>
+            <details className="context-help">
+              <summary>Using Git access</summary>
+              <p>
+                Use a board Git credential to clone, fetch, and push through the
+                gateway. Your upstream repository credentials stay on the
+                server.
+              </p>
+            </details>
+            <ActionForm
+              api={api}
+              path="/git-credentials"
+              method="DELETE"
+              body={() => ({})}
+              label="Revoke all my Git credentials"
+              onDone={() => {
+                setCredential(null);
+                notify("Git credentials revoked");
+              }}
+            />
+            {credential ? (
+              <div>
+                <p>Copy this credential now; it is shown once.</p>
+                <code className="orchestration-secret">
+                  {credential.token || credential.credential}
+                </code>
+                <p className="muted">
+                  Use your board username and this token when Git prompts for
+                  credentials. Use your Git credential manager rather than
+                  embedding it in a URL.
+                </p>
+                <p className="muted">
+                  Expires {new Date(credential.expires_at).toLocaleString()}.
+                </p>
+                <button
+                  className="button subtle"
+                  onClick={() => setCredential(null)}
+                >
+                  Dismiss credential
+                </button>
+              </div>
+            ) : (
+              <ActionForm
+                api={api}
+                path="/git-credentials"
+                body={() => ({ label: "Git command line" })}
+                onDone={setCredential}
+                label="Create Git credential"
+              />
+            )}
+          </section>
+          {data.user.admin && (
+            <RepositoryCredentialsPanel
+              api={api}
+              credentials={savedCredentials.credentials}
+              error={savedCredentials.error}
+              onSaved={savedCredentials.upsert}
+              onRemoved={savedCredentials.remove}
+            />
+          )}
+        </div>
+        {data.user.admin && (
+          <div className="repository-view" hidden={view !== "permissions"}>
+            {data.user.admin && state && (
+              <section className="orchestration-card">
+                <h2>Work and review permissions</h2>
+                <details className="context-help">
+                  <summary>Permission rules</summary>
+                  <p>
+                    Reviewers cannot approve their own work. Roles and prompts
+                    do not grant these permissions.
+                  </p>
+                </details>
+                <div className="orchestration-capabilities">
+                  {data.users.map((user) => (
+                    <CapabilityRow
+                      key={user.id}
+                      user={user}
+                      value={state.capabilities?.find(
+                        (c) => c.user_id === user.id,
+                      )}
+                      api={api}
+                      refresh={refresh}
+                    />
+                  ))}
+                </div>
+              </section>
+            )}
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
+function RepositoryCard({
+  repository: repo,
+  branches,
+  api,
+  admin,
+  savedCredentials,
+  refresh,
+  notify,
+  hidden,
+}) {
+  const [editing, setEditing] = useState(false);
+  const [history, setHistory] = useState(false);
+  const active = branches.filter((branch) => branch.state !== "merged");
+  const merged = branches.filter((branch) => branch.state === "merged");
+  const branchList = (rows) => (
+    <ul className="repository-branches">
+      {rows.map((branch) => (
+        <li key={branch.id}>
+          <div>
+            <strong>{branch.name}</strong>
+            <span className="muted">{branch.owner_name || ""}</span>
+          </div>
+          <span>
+            {branch.pull_request?.state === "open"
+              ? "PR open"
+              : branch.state || "active"}
+          </span>
+        </li>
+      ))}
+    </ul>
+  );
+  return (
+    <details className="orchestration-card repository-card" hidden={hidden}>
+      <summary className="repository-summary">
+        <GitBranch size={20} aria-hidden="true" />
+        <div className="repository-summary-name">
+          <h2>{repo.name}</h2>
+          <span>
+            {repo.merge_mode === "pull_request"
+              ? "GitHub pull request"
+              : "Direct merge"}{" "}
+            · {repo.main_branch}
+          </span>
+        </div>
+        <div className="repository-summary-status">
+          <span>
+            {active.length} active {active.length === 1 ? "branch" : "branches"}
+          </span>
+          {!!repo.require_human && <span>Human review required</span>}
+        </div>
+        <ChevronDown
+          className="repository-chevron"
+          size={18}
+          aria-hidden="true"
+        />
+      </summary>
+      <div className="repository-detail">
+        <div className="repository-detail-heading">
+          <h3>Repository details</h3>
+          {!!admin && (
+            <button
+              className="button subtle"
+              aria-expanded={editing}
+              aria-controls={`repository-settings-${repo.id}`}
+              onClick={() => setEditing((v) => !v)}
+            >
+              {editing ? "Cancel settings" : "Edit settings"}
+            </button>
+          )}
+        </div>
+        <dl className="repository-facts">
+          <div>
+            <dt>Git URL</dt>
+            <dd className="orchestration-code">{repo.url}</dd>
+          </div>
+          <div>
+            <dt>Integration</dt>
+            <dd>{mergeModeDescription(repo)}</dd>
+          </div>
+          <div>
+            <dt>Review policy</dt>
+            <dd>
+              {repo.require_human
+                ? "Human review required"
+                : "Eligible reviewer approval required"}
+            </dd>
+          </div>
+          <div>
+            <dt>Git gateway URL</dt>
+            <dd className="orchestration-code">
+              {location.origin}/api/git/{repo.id}.git
+            </dd>
+          </div>
+        </dl>
+        <div id={`repository-settings-${repo.id}`}>
+          {editing && (
+            <ActionForm
+              key={`policy:${repo.id}:${repo.require_human}:${repo.merge_mode}:${repo.github_owner}:${repo.github_repo}:${repo.github_token_configured}:${repo.git_credential_id}:${repo.github_credential_id}`}
+              api={api}
+              path={`/repositories/${repo.id}`}
+              method="PATCH"
+              body={(f) => ({
+                require_human: f.get("require_human") === "on",
+                ...credentialSelectionFields(f, "git"),
+                ...mergePolicyFields(f),
+              })}
+              label="Save settings"
+              onDone={() => {
+                refresh();
+                notify("Repository policy updated");
+                setEditing(false);
+              }}
+            >
+              <input type="hidden" name="existing_repository" value="true" />
               <RepositoryCredentialField
                 api={api}
                 kind="git"
+                repository={repo}
                 credentials={savedCredentials.credentials}
                 onCreated={savedCredentials.upsert}
               />
               <MergeModeFields
                 api={api}
+                repository={repo}
                 credentials={savedCredentials.credentials}
                 onCredentialCreated={savedCredentials.upsert}
               />
               <label className="orchestration-checkbox">
-                <input name="require_human" type="checkbox" />
+                <input
+                  type="checkbox"
+                  name="require_human"
+                  defaultChecked={!!repo.require_human}
+                />
                 Require human review before merging
               </label>
             </ActionForm>
-          </section>
-        )}
-        {data.user.admin && (
-          <RepositoryCredentialsPanel
-            api={api}
-            credentials={savedCredentials.credentials}
-            error={savedCredentials.error}
-            onSaved={savedCredentials.upsert}
-            onRemoved={savedCredentials.remove}
-          />
-        )}
-        {!state && !error && <p className="muted">Loading repositories…</p>}
-        {state?.repositories?.length === 0 && (
-          <section className="orchestration-card">
-            <GitBranch size={25} />
-            <h2>No repositories yet</h2>
-            <p>
-              {data.user.admin
-                ? "Register a repository to connect branches with tickets."
-                : "An admin can register your team's repositories."}
-            </p>
-          </section>
-        )}
-        {state?.repositories?.map((repo) => (
-          <section className="orchestration-card" key={repo.id}>
-            <h2>
-              <GitBranch size={18} />
-              {repo.name}
-            </h2>
-            <p className="orchestration-code">{repo.url}</p>
-            <p>
-              Main: <strong>{repo.main_branch}</strong> ·{" "}
-              {repo.require_human
-                ? "Human review required"
-                : "Eligible reviewer approval required"}
-            </p>
-            <p className="repository-merge-mode">
-              Integration: <strong>{mergeModeDescription(repo)}</strong>
-            </p>
-            {data.user.admin && (
-              <ActionForm
-                key={`policy:${repo.id}:${repo.require_human}:${repo.merge_mode}:${repo.github_owner}:${repo.github_repo}:${repo.github_token_configured}:${repo.git_credential_id}:${repo.github_credential_id}`}
-                api={api}
-                path={`/repositories/${repo.id}`}
-                method="PATCH"
-                body={(f) => ({
-                  require_human: f.get("require_human") === "on",
-                  ...credentialSelectionFields(f, "git"),
-                  ...mergePolicyFields(f),
-                })}
-                label="Save approval policy"
-                onDone={() => {
-                  refresh();
-                  notify("Repository policy updated");
-                }}
-              >
-                <input type="hidden" name="existing_repository" value="true" />
-                <RepositoryCredentialField
-                  api={api}
-                  kind="git"
-                  repository={repo}
-                  credentials={savedCredentials.credentials}
-                  onCreated={savedCredentials.upsert}
-                />
-                <MergeModeFields
-                  api={api}
-                  repository={repo}
-                  credentials={savedCredentials.credentials}
-                  onCredentialCreated={savedCredentials.upsert}
-                />
-                <label className="orchestration-checkbox">
-                  <input
-                    type="checkbox"
-                    name="require_human"
-                    defaultChecked={!!repo.require_human}
-                  />
-                  Require human review before merging
-                </label>
-              </ActionForm>
-            )}
-            <label>
-              Git gateway URL
-              <code className="orchestration-code">
-                {location.origin}/api/git/{repo.id}.git
-              </code>
-            </label>
-            <p className="muted">
-              Create and manage branches from a thread’s Branches tab.
-            </p>
-            <div className="orchestration-branch-summary">
-              {state.branches
-                ?.filter((b) => b.repository_id === repo.id)
-                .map((b) => (
-                  <span className="pill" key={b.id}>
-                    {b.name} · {b.state || b.status || "open"}
-                  </span>
-                ))}
-            </div>
-          </section>
-        ))}
-        <section className="orchestration-card">
-          <h2>Your Git access</h2>
-          <details className="context-help">
-            <summary>Using Git access</summary>
-            <p>
-              Use a board Git credential to clone, fetch, and push through the
-              gateway. Your upstream repository credentials stay on the server.
-            </p>
-          </details>
-          <ActionForm
-            api={api}
-            path="/git-credentials"
-            method="DELETE"
-            body={() => ({})}
-            label="Revoke all my Git credentials"
-            onDone={() => {
-              setCredential(null);
-              notify("Git credentials revoked");
-            }}
-          />
-          {credential ? (
-            <div>
-              <p>Copy this credential now; it is shown once.</p>
-              <code className="orchestration-secret">
-                {credential.token || credential.credential}
-              </code>
-              <p className="muted">
-                Use your board username and this token when Git prompts for
-                credentials. Use your Git credential manager rather than
-                embedding it in a URL.
-              </p>
-              <p className="muted">
-                Expires {new Date(credential.expires_at).toLocaleString()}.
-              </p>
-              <button
-                className="button subtle"
-                onClick={() => setCredential(null)}
-              >
-                Dismiss credential
-              </button>
-            </div>
-          ) : (
-            <ActionForm
-              api={api}
-              path="/git-credentials"
-              body={() => ({ label: "Git command line" })}
-              onDone={setCredential}
-              label="Create Git credential"
-            />
           )}
-        </section>
-        {data.user.admin && state && (
-          <section className="orchestration-card">
-            <h2>Work and review permissions</h2>
-            <details className="context-help">
-              <summary>Permission rules</summary>
-              <p>
-                Reviewers cannot approve their own work. Roles and prompts do
-                not grant these permissions.
-              </p>
-            </details>
-            <div className="orchestration-capabilities">
-              {data.users.map((user) => (
-                <CapabilityRow
-                  key={user.id}
-                  user={user}
-                  value={state.capabilities?.find((c) => c.user_id === user.id)}
-                  api={api}
-                  refresh={refresh}
-                />
-              ))}
+        </div>
+        <h3>Active branches</h3>
+        {active.length ? (
+          branchList(active)
+        ) : (
+          <p className="muted">No active branches.</p>
+        )}
+        <p className="muted">
+          Create and manage branches from a thread’s Branches tab.
+        </p>
+        {merged.length > 0 && (
+          <>
+            <button
+              className="button subtle repository-history"
+              aria-expanded={history}
+              aria-controls={`repository-history-${repo.id}`}
+              onClick={() => setHistory((v) => !v)}
+            >
+              {history ? "Hide" : "Show"} merged branches ({merged.length})
+            </button>
+            <div id={`repository-history-${repo.id}`} hidden={!history}>
+              {branchList(merged)}
             </div>
-          </section>
+          </>
         )}
       </div>
-    </>
+    </details>
   );
 }
 function CapabilityRow({ user, value, api, refresh }) {

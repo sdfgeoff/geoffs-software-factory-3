@@ -129,6 +129,10 @@ test(
       await expect(
         page.getByRole("heading", { name: "Repositories", exact: true }),
       ).toBeVisible();
+      await page
+        .locator(".repository-card summary")
+        .filter({ hasText: "Garden" })
+        .click();
       await expect(
         page.getByText("https://example.test/garden.git", { exact: true }),
       ).toBeVisible();
@@ -149,6 +153,10 @@ test(
         page.getByLabel("Server credential environment variable"),
       ).toBeVisible();
       await page.getByRole("button", { name: "Cancel registration" }).click();
+      await page
+        .getByRole("group", { name: "Repository sections" })
+        .getByRole("button", { name: "Git access", exact: true })
+        .click();
       await page.getByRole("button", { name: "Create Git credential" }).click();
       await expect(
         page.getByText("one-time-test-credential", { exact: true }),
@@ -325,7 +333,7 @@ test(
         .getByRole("button", { name: "Register repository", exact: true })
         .click();
       await expect(
-        page.getByRole("heading", { name: "Seed project", exact: true }),
+        page.getByText("Seed project", { exact: true }),
       ).toBeVisible();
       const bootstrap = await (
         await context.request.get(url + "/api/bootstrap")

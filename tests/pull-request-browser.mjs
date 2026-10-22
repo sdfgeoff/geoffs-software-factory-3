@@ -159,8 +159,12 @@ test(
         .getByRole("button", { name: "Repositories", exact: true })
         .click();
       const garden = page.locator(".orchestration-card").filter({
-        has: page.getByRole("heading", { name: "Garden", exact: true }),
+        has: page.getByText("Garden", { exact: true }),
       });
+      await garden.locator("summary").click();
+      await garden
+        .getByRole("button", { name: "Edit settings", exact: true })
+        .click();
       await expect(garden).toContainText("Direct merge by the board");
       await garden
         .getByLabel("Merge mode", { exact: true })
@@ -176,12 +180,15 @@ test(
         .getByLabel("GitHub token environment variable", { exact: false })
         .fill("PROJECT_GITHUB_TOKEN");
       await garden
-        .getByRole("button", { name: "Save approval policy", exact: true })
+        .getByRole("button", { name: "Save settings", exact: true })
         .click();
       await expect(garden).toContainText("GitHub pull request · acme/garden");
       assert.equal(policy.merge_mode, "pull_request");
       assert.equal(policy.pr_provider, "github");
       assert.equal(policy.github_token_env, "PROJECT_GITHUB_TOKEN");
+      await garden
+        .getByRole("button", { name: "Edit settings", exact: true })
+        .click();
       await expect(
         garden.getByLabel("GitHub token environment variable", {
           exact: false,
@@ -221,7 +228,7 @@ test(
         .getByRole("button", { name: "Register repository", exact: true })
         .click();
       await expect(
-        page.getByRole("heading", { name: "New project", exact: true }),
+        page.getByText("New project", { exact: true }),
       ).toBeVisible();
       assert.equal(registered.merge_mode, "pull_request");
       assert.equal(registered.github_token_env, "NEW_PROJECT_GITHUB_TOKEN");

@@ -129,6 +129,10 @@ test(
       await page
         .getByRole("button", { name: "Repositories", exact: true })
         .click();
+      const sections = page.getByRole("group", { name: "Repository sections" });
+      const section = (name) =>
+        sections.getByRole("button", { name, exact: true }).click();
+      await section("Git access");
       const panel = page.getByRole("region", {
         name: "Saved repository tokens",
         exact: true,
@@ -185,13 +189,15 @@ test(
       app.locals.db
         .prepare("UPDATE repositories SET url=? WHERE id=?")
         .run("git@github.com:example/project.git", repo.id);
+      await section("Overview");
       await page.getByRole("button", { name: "Refresh", exact: true }).click();
       const card = page.locator(".orchestration-card").filter({
-        has: page.getByRole("heading", {
-          name: "Saved credential repository",
-          exact: true,
-        }),
+        has: page.getByText("Saved credential repository", { exact: true }),
       });
+      await card.locator("summary").click();
+      await card
+        .getByRole("button", { name: "Edit settings", exact: true })
+        .click();
       await card
         .getByLabel("Merge mode", { exact: true })
         .selectOption("pull_request");
@@ -203,19 +209,24 @@ test(
         .getByLabel("GitHub token", { exact: true })
         .selectOption(String(selectedId));
       await card
-        .getByRole("button", { name: "Save approval policy", exact: true })
+        .getByRole("button", { name: "Save settings", exact: true })
         .click();
       await expect(card).toContainText("GitHub pull request · example/project");
       const savedRepo = (await request("/repositories"))[0];
       assert.equal(savedRepo.github_credential_id, selectedId);
       assert.equal(savedRepo.github_token_configured, true);
       assert.ok(!JSON.stringify(savedRepo).includes(rotatedSecret));
+      await section("Git access");
       await tokenRow("Shared GitHub")
         .getByRole("button", { name: "Delete token", exact: true })
         .click();
       await expect(tokenRow("Shared GitHub").getByRole("alert")).toContainText(
         /used by a repository/,
       );
+      await section("Overview");
+      await card
+        .getByRole("button", { name: "Edit settings", exact: true })
+        .click();
       await card
         .getByRole("button", { name: "Add github token", exact: true })
         .click();
@@ -228,7 +239,9 @@ test(
       await card
         .getByRole("button", { name: "Save github token", exact: true })
         .click();
+      await section("Git access");
       await expect(tokenRow("Inline unused")).toBeVisible();
+      await section("Overview");
       const inline = (await request("/admin/repository-credentials")).find(
         (entry) => entry.name === "Inline unused",
       );
@@ -241,6 +254,7 @@ test(
       await card
         .getByLabel("GitHub token", { exact: true })
         .selectOption(String(selectedId));
+      await section("Git access");
       await tokenRow("Inline unused")
         .getByRole("button", { name: "Delete token", exact: true })
         .click();
